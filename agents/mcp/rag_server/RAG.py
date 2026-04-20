@@ -200,35 +200,35 @@ class RAG_Server:
                 logger.info(page)
                 logger.info("-" * 80)  # Separator for readability
 
-            ################ CHUNKING TEST ################
+            # ################ CHUNKING TEST ################
 
             # Create a ChunkingStrategy instance with the desired settings.
             chunker = ChunkingStrategy(chunk_size=300, chunk_overlap=50)
 
-            # Retrieve page information from the pages list (using the 11th page as an example).
-            page = pages[11]
-            file_name = page["file_name"]
-            file_type = page["file_type"]
-            page_number = page["page_number"]
-            text_content = page["text"]
+            # # Retrieve page information from the pages list (using the 11th page as an example).
+            # page = pages[11]
+            # file_name = page["file_name"]
+            # file_type = page["file_type"]
+            # page_number = page["page_number"]
+            # text_content = page["text"]
 
-            # Debug: Print the text content of the selected page.
-            logger.info(f"Debug - Page Text: {text_content}")
+            # # Debug: Print the text content of the selected page.
+            # logger.info(f"Debug - Page Text: {text_content}")
 
             ################ CHUNKING ################
             # Chunk the document text using the chunk_document method.
-            chunks = chunker.chunk_document(text_content)
+            # chunks = chunker.chunk_document(text_content)
 
-            # Display file and page details along with the number of chunks generated.
-            logger.info(f"File: {file_name} (Page Number: {page_number})")
-            logger.info(f"Number of chunks: {len(chunks)}")
-            logger.info("-" * 80)
+            # # Display file and page details along with the number of chunks generated.
+            # logger.info(f"File: {file_name} (Page Number: {page_number})")
+            # logger.info(f"Number of chunks: {len(chunks)}")
+            # logger.info("-" * 80)
 
-            # Iterate through each chunk and print its contents.
-            for idx, chunk in enumerate(chunks):
-                logger.info(f"Chunk {idx + 1}:")
-                logger.info(chunk)
-                logger.info("-" * 80)
+            # # Iterate through each chunk and print its contents.
+            # for idx, chunk in enumerate(chunks):
+            #     logger.info(f"Chunk {idx + 1}:")
+            #     logger.info(chunk)
+            #     logger.info("-" * 80)
 
             all_chunks = []
 
@@ -240,11 +240,13 @@ class RAG_Server:
                         "id": str(uuid.uuid4()),  # Generate a unique ID for each chunk
                         "text": chunk,
                         "metadata": {
-                            "source": page["source"],
+                            "file_path": page["source"],
                             "doc_id": page["doc_id"],
                             "file_name": page["file_name"],
                             "file_type": page["file_type"],
                             "page_number": page["page_number"],
+                            "last_modified_date": page["last_modified"], ### DODATO
+                            "creation_date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ### DODATO
                             "chunk_method": chunker.method
                         }
                     })
@@ -279,24 +281,24 @@ class RAG_Server:
             final_count = self.collection.count()
             logger.info(f"Auto-ingestion completed. Collection now has {final_count} documents.")
 
-            ################ QUERY ################ ONLY FOR DEBUGGING
-            # Define your text query
-            query_text = "Šta je testiranje softvera?"
+            # ################ QUERY ################ ONLY FOR DEBUGGING
+            # # Define your text query
+            # query_text = "Šta je testiranje softvera?"
 
-            # Generate the embedding for the query text
-            query_embedding = embed_model.encode(query_text).tolist()
+            # # Generate the embedding for the query text
+            # query_embedding = embed_model.encode(query_text).tolist()
 
-            # Query the collection for the top 3 most similar documents.
-            # The 'include' parameter lets you retrieve documents, metadatas, and distances.
-            results = self.collection.query(
-                query_embeddings=[query_embedding],
-                n_results=3,
-                include=["documents", "metadatas", "distances"]
-            )
+            # # Query the collection for the top 3 most similar documents.
+            # # The 'include' parameter lets you retrieve documents, metadatas, and distances.
+            # results = self.collection.query(
+            #     query_embeddings=[query_embedding],
+            #     n_results=3,
+            #     include=["documents", "metadatas", "distances"]
+            # )
 
-            # Print the retrieval results
-            logger.info("Query Results:")
-            pprint(results)
+            # # Print the retrieval results
+            # logger.info("Query Results:")
+            # pprint(results)
             
         except ValueError as e:
             logger.warning(f"Skipping auto-ingestion: {e}")
@@ -334,6 +336,11 @@ class RAG_Server:
             if file_path.suffix.lower() in ('.pdf', '.docx', '.pptx', '.html', '.txt'):
                 logger.info(f"processing file: {file_path}")
                 elements = partition(str(file_path))
+
+                if elements:
+                    # Ispisuje sve dostupne atribute metapodataka prvog elementa
+                    print(f"Dostupni metapodaci za {file_path.name}: {elements[0].metadata.to_dict()}")
+
                 doc_id = str(uuid.uuid4())  # Single doc_id per file
 
                 # Group text by page number
@@ -346,6 +353,11 @@ class RAG_Server:
                     # Append element text to the corresponding page's list
                     page_texts.setdefault(page_number, []).append(str(el))
                 
+                # Added metadata
+                meta_dict = elements[0].metadata.to_dict() if elements else {}
+                last_modified = meta_dict.get("last_modified", None) 
+                last_modified = meta_dict.get("last_modified", None) 
+                
                 # Create a document entry for each page
                 for page_number, texts in page_texts.items():
                     combined_text = " ".join(texts).strip()
@@ -355,7 +367,8 @@ class RAG_Server:
                         "file_name": file_path.name,
                         "file_type": file_path.suffix,
                         "page_number": page_number,
-                        "doc_id": doc_id
+                        "doc_id": doc_id,
+                        "last_modified": last_modified
                     })
         return pages
     
@@ -501,13 +514,15 @@ class RAG_Server:
         - The number of chunks each file has been divided into.
         - The total size of the content stored in the database.
         """
+        print("##########################################################")
+        print("############## STARTING LIST INGESTED FILES ##############")
+        print("##########################################################")
         try:
             is_configured, config_message = self._check_data_directory_configured()
             if not is_configured:
                 return config_message
             
             all_docs = self.collection.get(include=["metadatas"])
-            
             if not all_docs["metadatas"]:
                 return "No files have been ingested yet."
             
@@ -530,6 +545,7 @@ class RAG_Server:
                             "chunks_found": 0,
                             "total_chunk_size": 0
                         }
+
                     file_info[file_key]["chunks_found"] += 1
                     file_info[file_key]["total_chunk_size"] += metadata.get("chunk_size", 0)
             
@@ -552,6 +568,10 @@ class RAG_Server:
             total_chunk_size = sum(info["total_chunk_size"] for info in file_info.values())
             response += f"Total chunks in database: {total_chunks}\n"
             response += f"Total content size: {total_chunk_size:,} characters"
+
+            print("##########################################################")
+            print("############### ENDING LIST INGESTED FILES ###############")
+            print("##########################################################")
             
             return response
             
@@ -790,8 +810,8 @@ class ChunkingStrategy:
 
 if __name__ == "__main__":
     # Create an instance of our service, which will register the tools.
-    RAG_Server()
-    
+    rag = RAG_Server()
+
     # Run the MCP server
     logger.info("Starting RAG MCP Server...")
 
