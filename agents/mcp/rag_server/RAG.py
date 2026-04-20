@@ -2,22 +2,33 @@ import os
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 from textwrap import dedent
 from dotenv import load_dotenv
 from datetime import datetime
+import uuid
 
 # FastMCP imports
 from fastmcp import FastMCP
-from fastmcp.prompts import Message, TextContent
+from fastmcp.prompts import Message#, TextContent
 
 # ChromaDB imports
 import chromadb
 from chromadb.config import Settings
 
-# UnstructuredLoader and SentenceTransformer imports
-from langchain_unstructured import UnstructuredLoader
+# Importing our document partitioner from unstructured.io
+from unstructured.partition.auto import partition
+
+# Importing various text splitters for different chunking strategies
+from langchain_text_splitters import (
+    RecursiveCharacterTextSplitter,
+    CharacterTextSplitter
+)
+
 from sentence_transformers import SentenceTransformer
+
+# Debugging formatter
+from pprint import pprint
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -61,7 +72,7 @@ class RAG_Server:
             logger.info(f"ChromaDB initialized successfully. Vector database has {self.collection.count()} documents.")
 
             if self.collection.count() > 0:
-                logger.info("Podaci već postoje u bazi. Preskačem auto-ingestiju.")
+                logger.info("Database already has data. Skipping auto-ingestion.")
                 return
             
             # Auto-ingest files from data directory
@@ -152,7 +163,7 @@ class RAG_Server:
             )
             return False, message
 
-    def sanitize_metadata(self, metadata: dict) -> dict:
+    def _sanitize_metadata(self, metadata: dict) -> dict:
         """Sanitize metadata to ensure all values are JSON serializable and non-null."""
         sanitized = {}
         for key, value in metadata.items():
@@ -169,99 +180,230 @@ class RAG_Server:
     def _auto_ingest_files(self):
         """Automatically ingest all files from the data directory"""
         try:
+            ################ LOAD DATA ################
+
             data_path = self._get_data_directory()
-            
             os.makedirs(data_path, exist_ok=True)
-            
-            files = list(data_path.glob("*"))
-            files_path = [str(f) for f in files if f.is_file()]
-            
-            if not files_path:
+
+            pages = self._process_documents_pages(data_path)
+
+            if not pages or len(pages) == 0:
                 logger.info("No files found in data directory. Skipping auto-ingestion.")
                 return
-            
-            logger.info(f"Found {len(files_path)} files in data directory. Starting auto-ingestion...")
-            
-            loader = UnstructuredLoader(files_path)
 
-            if not loader:
-                logger.warning("Loader not initialized.")
-                loader = None
+            # DEBUG
+            for page in pages:
+                logger.info(f"File Name: {page['file_name']}")
+                logger.info(f"Page Number: {page['page_number']}")
+                logger.info(f"Text: {page['text'][:200]}...")  # Truncate text to 100 characters
+                logger.info("-" * 80)  # Separator for readability
+                logger.info(page)
+                logger.info("-" * 80)  # Separator for readability
 
-            chunks = loader.load()
-            
-            if not chunks:
-                logger.info("No chunks loaded from data directory.")
-                return
-            
-            logger.info(f"Loaded {len(chunks)} chunks from data directory.")
+            ################ CHUNKING TEST ################
 
-            # Model for embeddings
-            model = SentenceTransformer('all-MiniLM-L6-v2')
+            # Create a ChunkingStrategy instance with the desired settings.
+            chunker = ChunkingStrategy(chunk_size=300, chunk_overlap=50)
 
-            if not model:
-                logger.info("No embedding model initialized.")
-                return
+            # Retrieve page information from the pages list (using the 11th page as an example).
+            page = pages[11]
+            file_name = page["file_name"]
+            file_type = page["file_type"]
+            page_number = page["page_number"]
+            text_content = page["text"]
 
-            all_documents = []
-            all_metadatas = []
-            all_embeddings = []
-            all_ids = []
-            
-            for chunk in chunks:
-                try:
-                    content = chunk.page_content
+            # Debug: Print the text content of the selected page.
+            logger.info(f"Debug - Page Text: {text_content}")
 
-                    if hasattr(chunk, 'metadata'):
-                        metadata = chunk.metadata.copy()
+            ################ CHUNKING ################
+            # Chunk the document text using the chunk_document method.
+            chunks = chunker.chunk_document(text_content)
 
-                        if 'element_id' in metadata:
-                            id = metadata['element_id']
+            # Display file and page details along with the number of chunks generated.
+            logger.info(f"File: {file_name} (Page Number: {page_number})")
+            logger.info(f"Number of chunks: {len(chunks)}")
+            logger.info("-" * 80)
 
-                        # if 'file_name' in chunk.metadata:
-                        #     file_name = chunk.metadata['file_name']
-                        # elif 'file_path' in chunk.metadata:
-                        #     file_name = Path(chunk.metadata['file_path']).name
-                        # else:
-                        #     file_name = "unknown"
+            # Iterate through each chunk and print its contents.
+            for idx, chunk in enumerate(chunks):
+                logger.info(f"Chunk {idx + 1}:")
+                logger.info(chunk)
+                logger.info("-" * 80)
 
-                        metadata.update({
-                            "ingestion_date": datetime.now().isoformat(),
-                            "parent_id": metadata.get("parent_id", "") or "",
-                        })
+            all_chunks = []
 
-                        metadata = self.sanitize_metadata(metadata)
+            for page in pages:
+                chunks = chunker.chunk_document(page["text"])
+                
+                for chunk in chunks:
+                    all_chunks.append({
+                        "id": str(uuid.uuid4()),  # Generate a unique ID for each chunk
+                        "text": chunk,
+                        "metadata": {
+                            "source": page["source"],
+                            "doc_id": page["doc_id"],
+                            "file_name": page["file_name"],
+                            "file_type": page["file_type"],
+                            "page_number": page["page_number"],
+                            "chunk_method": chunker.method
+                        }
+                    })
 
-                    else:
-                        metadata = {}
+            logger.info(f"Created {len(all_chunks)} text chunks.")
 
-                    embedding = model.encode(chunk.page_content)
+            ################ EMBEDDING ################
+            # Initialize a SentenceTransformer model (choose one appropriate for your use case)
+            embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-                    all_documents.append(content)
-                    all_metadatas.append(metadata)
-                    all_embeddings.append(embedding.tolist())
-                    all_ids.append(id)
-                    
-                except Exception as e:
-                    logger.error(f"Failed to ingest chunk: {e}")
-                    continue
-            
-            if all_documents:
-                self.collection.add(
-                    documents = all_documents,
-                    metadatas = all_metadatas,
-                    embeddings = all_embeddings,
-                    ids = all_ids
-                )
+            # Gather all chunk texts for embedding generation
+            chunk_texts = [chunk["text"] for chunk in all_chunks]
+
+            # Compute embeddings (using batch encoding for efficiency)
+            embeddings = embed_model.encode(chunk_texts, convert_to_numpy=True, show_progress_bar=True)
+
+            # Attach each embedding (converted to a list) to the corresponding chunk
+            for i, chunk in enumerate(all_chunks):
+                chunk["embedding"] = embeddings[i].tolist()
+
+            logger.info("Embeddings generated and attached to each chunk.")
+             
+            ################ CHROMADB ################
+
+            self.collection.add(
+                ids=[chunk["id"] for chunk in all_chunks],
+                embeddings=embeddings.tolist(),
+                metadatas=[chunk["metadata"] for chunk in all_chunks],
+                documents=chunk_texts
+            )
 
             final_count = self.collection.count()
             logger.info(f"Auto-ingestion completed. Collection now has {final_count} documents.")
+
+            ################ QUERY ################ ONLY FOR DEBUGGING
+            # Define your text query
+            query_text = "Šta je testiranje softvera?"
+
+            # Generate the embedding for the query text
+            query_embedding = embed_model.encode(query_text).tolist()
+
+            # Query the collection for the top 3 most similar documents.
+            # The 'include' parameter lets you retrieve documents, metadatas, and distances.
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=3,
+                include=["documents", "metadatas", "distances"]
+            )
+
+            # Print the retrieval results
+            logger.info("Query Results:")
+            pprint(results)
             
         except ValueError as e:
             logger.warning(f"Skipping auto-ingestion: {e}")
             return
         except Exception as e:
             logger.error(f"Failed during auto-ingestion: {e}")
+
+    def _process_documents_pages(self, source_dir: str) -> List[Dict]:
+        """
+        Load documents from a given directory using Unstructured IO and group text by page number.
+
+        Args:
+            source_dir (str): Directory containing documents.
+
+        Returns:
+            List[Dict]: A list of dictionaries where each dictionary contains:
+                        - 'text': combined text from a page,
+                        - 'source': file path,
+                        - 'file_name': file name with extension,
+                        - 'file_type': file extension,
+                        - 'page_number': page number,
+                        - 'doc_id': a unique id for the entire file.
+        """
+        pages = []
+        
+        all_files = [f for f in Path(source_dir).rglob('*') if f.is_file()]
+
+        if not all_files:
+            #logger.info("No documents found in directory.")
+            return []  # or raise an exception if you prefer
+        
+        logger.info(f"Found {len(all_files)} files in data directory. Starting auto-ingestion...")
+            
+        for file_path in all_files:
+            if file_path.suffix.lower() in ('.pdf', '.docx', '.pptx', '.html', '.txt'):
+                logger.info(f"processing file: {file_path}")
+                elements = partition(str(file_path))
+                doc_id = str(uuid.uuid4())  # Single doc_id per file
+
+                # Group text by page number
+                page_texts = {}
+                for el in elements:
+                    # Get the page number; default to 1 if not provided
+                    page_number = getattr(el.metadata, "page_number", None)
+                    page_number = int(page_number) if page_number is not None else 1
+                    
+                    # Append element text to the corresponding page's list
+                    page_texts.setdefault(page_number, []).append(str(el))
+                
+                # Create a document entry for each page
+                for page_number, texts in page_texts.items():
+                    combined_text = " ".join(texts).strip()
+                    pages.append({
+                        "text": combined_text,
+                        "source": str(file_path),
+                        "file_name": file_path.name,
+                        "file_type": file_path.suffix,
+                        "page_number": page_number,
+                        "doc_id": doc_id
+                    })
+        return pages
+    
+    ########### ONLY FOR DEBUGGING
+    def _reformat(self, chroma_results: dict) -> list:
+        """
+        Reformat chroma db results to a list of search items containing:
+        - chunk_id
+        - chunk_index
+        - doc_id
+        - page_number
+        - source
+        - text (from documents)
+        - distance
+        - score
+
+        Parameters:
+            chroma_results (dict): The raw results from the Chroma DB query.
+
+        Returns:
+            list: A list of dictionaries with the desired keys.
+        """
+        reformatted = []
+        
+        # Get the lists from the results. They are expected to be lists of lists.
+        metadatas = chroma_results.get("metadatas", [])
+        documents = chroma_results.get("documents", [])
+        distances = chroma_results.get("distances", [])
+        
+        # Loop over each group (each inner list represents one set of matches)
+        chunk_index = 1
+        for meta_group, doc_group, distance_group in zip(metadatas, documents, distances):
+            # Iterate over each item in the inner lists
+            for meta, text, distance in zip(meta_group, doc_group, distance_group):
+                item = {
+                    "chunk_index": chunk_index,
+                    "chunk_id": meta.get("chunk_id"),
+                    "doc_id": meta.get("doc_id"),
+                    "page_number": meta.get("page_number"),
+                    "source": meta.get("source"),
+                    "text": text,
+                    "distance": distance,
+                    "score": 1 - distance
+                }
+                reformatted.append(item)
+                chunk_index += 1
+        
+        return reformatted
 
     @mcp.tool()
     def query_documents(self, query: str, n_results: int = 5, include_metadata: bool = True) -> str:
@@ -601,6 +743,50 @@ class RAG_Server:
             role="user",
             content=TextContent(type="text", text=text)
         )
+    
+class ChunkingStrategy:
+    def __init__(self, method: str = 'recursive', encoding_name: str = "cl100k_base", chunk_size: int = 300, chunk_overlap: int = 50):
+        """
+        Initialize a chunking strategy.
+
+        Args:
+            method (str): The chunking method, e.g. 'fixed' or 'recursive'.
+            encoding_name (str): The name of the encoding to use.
+            chunk_size (int): The size of each chunk.
+            chunk_overlap (int): The overlap between chunks.
+        """
+        self.method = method
+        self.encoding_name = encoding_name
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+
+    def chunk_document(self, text: str) -> List[str]:
+        """
+        Chunk a document's text using the selected strategy.
+
+        Args:
+            text (str): The document's text to chunk.
+
+        Returns:
+            List[str]: A list of text chunks.
+        """
+        if self.method == 'fixed':
+            splitter = CharacterTextSplitter.from_tiktoken_encoder(
+                encoding_name=self.encoding_name, 
+                chunk_size=self.chunk_size, 
+                chunk_overlap=self.chunk_overlap
+            )
+            return splitter.split_text(text)
+        elif self.method == 'recursive':
+            splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+                encoding_name=self.encoding_name, 
+                chunk_size=self.chunk_size, 
+                chunk_overlap=self.chunk_overlap
+            )
+            return splitter.split_text(text)
+        else:
+            raise ValueError("Unknown chunking method: choose 'fixed' or 'recursive'.")
+
 
 if __name__ == "__main__":
     # Create an instance of our service, which will register the tools.
@@ -608,4 +794,5 @@ if __name__ == "__main__":
     
     # Run the MCP server
     logger.info("Starting RAG MCP Server...")
+
     # mcp.run("stdio")
