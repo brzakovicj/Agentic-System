@@ -1,12 +1,14 @@
 import os
 import json
 import logging
+import uuid
+import numpy as np
+import hashlib
 from pathlib import Path
 from typing import Dict, Any, List
 from textwrap import dedent
 from dotenv import load_dotenv
 from datetime import datetime
-import uuid
 
 # FastMCP imports
 from fastmcp import FastMCP
@@ -25,14 +27,25 @@ from langchain_text_splitters import (
     CharacterTextSplitter
 )
 
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 
 # Debugging formatter
 from pprint import pprint
 
+from transformers import logging as hf_logging
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Silence noisy libraries
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+
+# Transformers verbosity
+hf_logging.set_verbosity_error()
 
 load_dotenv()
 
@@ -44,8 +57,15 @@ class RAG_Server:
         """Initializes the RAG server, setting up the database connection."""
         self.chroma_client = None
         self.collection = None
+
+        self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
+
         self._initialize_chromadb()
 
+    ##########################################################################################################################
+    #################################################### HELPER FUNCTIONS ####################################################
+    ##########################################################################################################################
 
     def _initialize_chromadb(self): # ok
         """Initialize ChromaDB client and collection, then auto-ingest files from data directory"""
@@ -191,114 +211,7 @@ class RAG_Server:
                 logger.info("No files found in data directory. Skipping auto-ingestion.")
                 return
 
-            # DEBUG
-            for page in pages:
-                logger.info(f"File Name: {page['file_name']}")
-                logger.info(f"Page Number: {page['page_number']}")
-                logger.info(f"Text: {page['text'][:200]}...")  # Truncate text to 100 characters
-                logger.info("-" * 80)  # Separator for readability
-                logger.info(page)
-                logger.info("-" * 80)  # Separator for readability
-
-            # ################ CHUNKING TEST ################
-
-            # Create a ChunkingStrategy instance with the desired settings.
-            chunker = ChunkingStrategy(chunk_size=300, chunk_overlap=50)
-
-            # # Retrieve page information from the pages list (using the 11th page as an example).
-            # page = pages[11]
-            # file_name = page["file_name"]
-            # file_type = page["file_type"]
-            # page_number = page["page_number"]
-            # text_content = page["text"]
-
-            # # Debug: Print the text content of the selected page.
-            # logger.info(f"Debug - Page Text: {text_content}")
-
-            ################ CHUNKING ################
-            # Chunk the document text using the chunk_document method.
-            # chunks = chunker.chunk_document(text_content)
-
-            # # Display file and page details along with the number of chunks generated.
-            # logger.info(f"File: {file_name} (Page Number: {page_number})")
-            # logger.info(f"Number of chunks: {len(chunks)}")
-            # logger.info("-" * 80)
-
-            # # Iterate through each chunk and print its contents.
-            # for idx, chunk in enumerate(chunks):
-            #     logger.info(f"Chunk {idx + 1}:")
-            #     logger.info(chunk)
-            #     logger.info("-" * 80)
-
-            all_chunks = []
-
-            for page in pages:
-                chunks = chunker.chunk_document(page["text"])
-                
-                for chunk in chunks:
-                    all_chunks.append({
-                        "id": str(uuid.uuid4()),  # Generate a unique ID for each chunk
-                        "text": chunk,
-                        "metadata": {
-                            "file_path": page["source"],
-                            "doc_id": page["doc_id"],
-                            "file_name": page["file_name"],
-                            "file_type": page["file_type"],
-                            "page_number": page["page_number"],
-                            "last_modified_date": page["last_modified"], ### DODATO
-                            "creation_date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ### DODATO
-                            "chunk_method": chunker.method
-                        }
-                    })
-
-            logger.info(f"Created {len(all_chunks)} text chunks.")
-
-            ################ EMBEDDING ################
-            # Initialize a SentenceTransformer model (choose one appropriate for your use case)
-            embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-
-            # Gather all chunk texts for embedding generation
-            chunk_texts = [chunk["text"] for chunk in all_chunks]
-
-            # Compute embeddings (using batch encoding for efficiency)
-            embeddings = embed_model.encode(chunk_texts, convert_to_numpy=True, show_progress_bar=True)
-
-            # Attach each embedding (converted to a list) to the corresponding chunk
-            for i, chunk in enumerate(all_chunks):
-                chunk["embedding"] = embeddings[i].tolist()
-
-            logger.info("Embeddings generated and attached to each chunk.")
-             
-            ################ CHROMADB ################
-
-            self.collection.add(
-                ids=[chunk["id"] for chunk in all_chunks],
-                embeddings=embeddings.tolist(),
-                metadatas=[chunk["metadata"] for chunk in all_chunks],
-                documents=chunk_texts
-            )
-
-            final_count = self.collection.count()
-            logger.info(f"Auto-ingestion completed. Collection now has {final_count} documents.")
-
-            # ################ QUERY ################ ONLY FOR DEBUGGING
-            # # Define your text query
-            # query_text = "Šta je testiranje softvera?"
-
-            # # Generate the embedding for the query text
-            # query_embedding = embed_model.encode(query_text).tolist()
-
-            # # Query the collection for the top 3 most similar documents.
-            # # The 'include' parameter lets you retrieve documents, metadatas, and distances.
-            # results = self.collection.query(
-            #     query_embeddings=[query_embedding],
-            #     n_results=3,
-            #     include=["documents", "metadatas", "distances"]
-            # )
-
-            # # Print the retrieval results
-            # logger.info("Query Results:")
-            # pprint(results)
+            self._ingest_files(pages = pages)
             
         except ValueError as e:
             logger.warning(f"Skipping auto-ingestion: {e}")
@@ -330,18 +243,20 @@ class RAG_Server:
             #logger.info("No documents found in directory.")
             return []  # or raise an exception if you prefer
         
-        logger.info(f"Found {len(all_files)} files in data directory. Starting auto-ingestion...")
+        logger.info(f"Found {len(all_files)} files in data directory. Starting ingestion...")
             
         for file_path in all_files:
             if file_path.suffix.lower() in ('.pdf', '.docx', '.pptx', '.html', '.txt'):
-                logger.info(f"processing file: {file_path}")
+                logger.info(f"Processing file: {file_path}")
                 elements = partition(str(file_path))
 
-                if elements:
-                    # Ispisuje sve dostupne atribute metapodataka prvog elementa
-                    print(f"Dostupni metapodaci za {file_path.name}: {elements[0].metadata.to_dict()}")
+                # DEBUG
+                # if elements:
+                #     # Ispisuje sve dostupne atribute metapodataka prvog elementa
+                #     print(f"Dostupni metapodaci za {file_path.name}: {elements[0].metadata.to_dict()}")
 
-                doc_id = str(uuid.uuid4())  # Single doc_id per file
+                # Single doc_id per file
+                doc_id = str(uuid.uuid4())
 
                 # Group text by page number
                 page_texts = {}
@@ -356,23 +271,118 @@ class RAG_Server:
                 # Added metadata
                 meta_dict = elements[0].metadata.to_dict() if elements else {}
                 last_modified = meta_dict.get("last_modified", None) 
-                last_modified = meta_dict.get("last_modified", None) 
+
+                # Compute hash
+                file_hash = self._compute_file_hash(file_path)
                 
                 # Create a document entry for each page
                 for page_number, texts in page_texts.items():
                     combined_text = " ".join(texts).strip()
                     pages.append({
-                        "text": combined_text,
-                        "source": str(file_path),
+                        "file_id": doc_id,
+                        "file_hash": file_hash,
+                        "file_content": combined_text,
+                        "file_path": str(file_path),
                         "file_name": file_path.name,
                         "file_type": file_path.suffix,
                         "page_number": page_number,
-                        "doc_id": doc_id,
                         "last_modified": last_modified
                     })
         return pages
     
-    ########### ONLY FOR DEBUGGING
+    def _ingest_files(self, pages: List[Dict]):
+        """Chunks, embeds and inserts document pages into ChromaDB collection."""
+        # DEBUG
+        for page in pages:
+            logger.info(f"File Name: {page['file_name']}")
+            logger.info(f"Page Number: {page['page_number']}")
+            logger.info(f"Text: {page['file_content'][:200]}...")  # Truncate text to 100 characters
+            logger.info("-" * 80)  # Separator for readability
+            #logger.info(page)
+            #logger.info("-" * 80)  # Separator for readability
+
+        # Create a ChunkingStrategy instance with the desired settings.
+        chunker = ChunkingStrategy(chunk_size=300, chunk_overlap=50)
+
+        # ################ DEBUG: CHUNKING TEST ################
+
+        # # Retrieve page information from the new_pages list (using the 11th page as an example).
+        # page = new_pages[11]
+        # file_name = page["file_name"]
+        # file_type = page["file_type"]
+        # page_number = page["page_number"]
+        # text_content = page["text"]
+
+        # # Debug: Print the text content of the selected page.
+        # logger.info(f"Debug - Page Text: {text_content}")
+        
+        # Chunk the document text using the chunk_document method.
+        # chunks = chunker.chunk_document(text_content)
+
+        # # Display file and page details along with the number of chunks generated.
+        # logger.info(f"File: {file_name} (Page Number: {page_number})")
+        # logger.info(f"Number of chunks: {len(chunks)}")
+        # logger.info("-" * 80)
+
+        # # Iterate through each chunk and print its contents.
+        # for idx, chunk in enumerate(chunks):
+        #     logger.info(f"Chunk {idx + 1}:")
+        #     logger.info(chunk)
+        #     logger.info("-" * 80)
+        
+        ################ CHUNKING ################
+        
+        all_chunks = []
+
+        for page in pages:
+            chunks = chunker.chunk_document(page["file_content"])
+            
+            for chunk in chunks:
+                all_chunks.append({
+                    "id": str(uuid.uuid4()),  # Generate a unique ID for each chunk
+                    "text": chunk,
+                    "metadata": {
+                        "file_id": page["file_id"],
+                        "file_hash": page["file_hash"],
+                        "file_path": page["file_path"],
+                        "file_name": page["file_name"],
+                        "file_type": page["file_type"],
+                        "page_number": page["page_number"],
+                        "last_modified_date": page["last_modified"],
+                        "creation_date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        "chunk_method": chunker.method
+                    }
+                })
+
+        logger.info(f"Created {len(all_chunks)} text chunks.")
+
+        ################ EMBEDDING ################
+
+        # Gather all chunk texts for embedding generation
+        chunk_texts = [chunk["text"] for chunk in all_chunks]
+
+        # Compute embeddings (using batch encoding for efficiency)
+        embeddings = self.embed_model.encode(chunk_texts, convert_to_numpy=True, show_progress_bar=True)
+
+        # Attach each embedding (converted to a list) to the corresponding chunk
+        for i, chunk in enumerate(all_chunks):
+            chunk["embedding"] = embeddings[i].tolist()
+
+        logger.info("Embeddings generated and attached to each chunk.")
+        
+        ################ CHROMADB ################
+
+        self.collection.add(
+            ids=[chunk["id"] for chunk in all_chunks],
+            embeddings=embeddings.tolist(),
+            metadatas=[chunk["metadata"] for chunk in all_chunks],
+            documents=chunk_texts
+        )
+
+        final_count = self.collection.count()
+        logger.info(f"Auto-ingestion completed. Collection now has {final_count} documents.")
+
+    # DEBUG
     def _reformat(self, chroma_results: dict) -> list:
         """
         Reformat chroma db results to a list of search items containing:
@@ -418,39 +428,82 @@ class RAG_Server:
         
         return reformatted
 
+    def _compute_file_hash(self, file_path: str) -> str:
+        with open(file_path, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()
+
+    def _get_existing_file_hashes(self) -> set:
+        all_docs = self.collection.get(include=["metadatas"])
+        
+        hashes = set()
+        for meta in all_docs.get("metadatas", []):
+            if meta and "file_hash" in meta:
+                hashes.add(meta["file_hash"])
+        
+        return hashes
+
+    ###################################################################################################################
+    #################################################### MCP TOOLS ####################################################
+    ###################################################################################################################
+    
     @mcp.tool()
-    def query_documents(self, query: str, n_results: int = 5, include_metadata: bool = True) -> str:
+    def query_documents(self, query: str, n_results: int = 5, include_metadata: bool = True, top_n: int = 3) -> str: # Ogranicenje za top_n?
         """
-        Query the local document knowledge base (vector database) to retrieve relevant information based on your search query.
-        
-        This tool allows you to search through all documents that have been ingested into the system's vector database.
-        It uses semantic search to find the most relevant text passages that match your query, going beyond simple
-        keyword matching to understand the meaning and context of your search.
-        
-        The tool is particularly useful for:
-        - Finding specific information across multiple documents
-        - Discovering connections between different pieces of content
-        - Getting quick access to relevant passages without reading entire documents
-        - Verifying facts or finding supporting evidence in your document collection
-        
-        Each result includes:
-        - The relevant text passage
-        - Source document information
-        - Similarity score showing how well it matches your query
-        - Additional metadata about the document chunk
-        
-        You can control the number of results returned and whether to include detailed metadata
-        in the response.
-        
+        Performs semantic search over the vector database to retrieve and rerank the most relevant document chunks for a given query.
+
+        This tool executes a two-stage retrieval process:
+
+        1. INITIAL RETRIEVAL (Vector Search):
+        - Uses ChromaDB to perform semantic similarity search over stored document embeddings
+        - Retrieves the top N candidate chunks based on vector similarity (controlled by `n_results`)
+
+        2. RERANKING (Cross-Encoder):
+        - Applies a cross-encoder model to rerank retrieved chunks for improved relevance accuracy
+        - Produces a refined ranking of the most semantically relevant results
+        - Final output is limited to `top_n` results
+
+        This hybrid approach improves accuracy by combining fast vector search with deeper semantic scoring.
+
+        Use cases:
+        - Finding precise answers in large document collections
+        - Extracting contextually relevant passages across multiple files
+        - Improving search accuracy beyond embedding similarity
+        - Supporting question answering and RAG-based reasoning
+
         Args:
-            query: The search query
-            n_results: Number of results to return (default: 5, min: 5, max: 20)
-            include_metadata: Whether to include metadata in results (default: True)
-        
+            query (str):
+                The natural language search query used to retrieve relevant document chunks.
+
+            n_results (int, default=5):
+                Number of candidate chunks retrieved from the vector database before reranking.
+                Higher values improve recall but increase latency.
+
+            include_metadata (bool, default=True):
+                Whether to include document metadata (file name, source path, page number) in the output.
+
+            top_n (int, default=3):
+                Number of final results returned after reranking.
+                Must be ≤ n_results for meaningful ranking behavior.
+
         Returns:
-            Formatted string with relevant documents and their metadata
+            A formatted string containing:
+            - The original query
+            - Top-ranked document chunks after reranking
+            - Optional metadata (source file, page number)
+            - Relevance scores and similarity scores
+
+        Scoring:
+            - Similarity Score: cosine distance-based similarity from vector search (pre-rerank)
+            - Relevance Score: cross-encoder score (final ranking signal)
+
+        Notes:
+        - This tool prioritizes precision over recall in the final output due to reranking
+        - Increasing `n_results` improves candidate diversity for reranking
+        - `top_n` controls final output size after reranking
         """
         try:
+            ################ RETRIEVE ################
+
             is_configured, config_message = self._check_data_directory_configured()
             if not is_configured:
                 return config_message
@@ -463,6 +516,11 @@ class RAG_Server:
             elif n_results > 20:
                 n_results = 20
             
+            top_n = min(top_n, n_results)
+
+            if top_n <= 0:
+                top_n = n_results
+
             results = self.collection.query(
                 query_texts=[query],
                 n_results=n_results,
@@ -472,19 +530,40 @@ class RAG_Server:
             if not results["documents"] or not results["documents"][0]:
                 return "No relevant documents found for your query."
             
-            formatted_results = []
+            ################ RERANK ################
+
             documents = results["documents"][0]
             metadatas = results["metadatas"][0] if results["metadatas"] else [{}] * len(documents)
             distances = results["distances"][0] if results["distances"] else [0] * len(documents)
+
+            # Rerank
+            pairs = [(query, doc) for doc in documents]
+            scores = self.cross_encoder.predict(pairs)
+
+            # Sort by score descending
+            top_indices = np.argsort(scores)[-top_n:][::-1]
+
+            # Apply same ordering to everything
+            documents = [documents[i] for i in top_indices]
+            metadatas = [metadatas[i] for i in top_indices]
+            distances = [distances[i] for i in top_indices]
+            scores = [scores[i] for i in top_indices]
+
+            ################ FORMAT ################
+
+            formatted_results = []
             
-            for i, (doc, metadata, distance) in enumerate(zip(documents, metadatas, distances)):
+            for i, (doc, metadata, distance, score) in enumerate(zip(documents, metadatas, distances, scores)):
                 result_text = f"\n--- Result {i+1} ---\n"
                 result_text += f"Content: {doc}\n"
                 
                 if include_metadata and metadata:
-                    result_text += f"Source: {metadata.get('source_file', 'Unknown')}\n"
-                    result_text += f"Chunk: {metadata.get('chunk_index', 'Unknown')} of {metadata.get('total_chunks', 'Unknown')}\n"
-                    result_text += f"Similarity Score: {1 - distance:.3f}\n"
+                    result_text += f"File Name: {metadata.get('file_name', 'Unknown')}\n"
+                    result_text += f"Source: {metadata.get('file_path', 'Unknown')}\n"
+                    result_text += f"Page Number: {metadata.get('page_number', 'Unknown')}\n"
+                    #result_text += f"Chunk: {metadata.get('chunk_index', 'Unknown')} of {metadata.get('total_chunks', 'Unknown')}\n"
+                    result_text += f"Similarity Score: {1 - distance:.3f}\n" # Sta ce nam ovo?
+                    result_text += f"Relevance Score: {score:.3f}\n" # Sta ce nam ovo?
                 
                 formatted_results.append(result_text)
             
@@ -499,6 +578,7 @@ class RAG_Server:
             logger.error(error_msg)
             return error_msg
 
+    # OK treba verovatno izmeniti metadata koje se izlistavaju i generalno koje se cuvaju u vectorstore
     @mcp.tool()
     def list_ingested_files(self) -> str:
         """
@@ -514,9 +594,7 @@ class RAG_Server:
         - The number of chunks each file has been divided into.
         - The total size of the content stored in the database.
         """
-        print("##########################################################")
-        print("############## STARTING LIST INGESTED FILES ##############")
-        print("##########################################################")
+
         try:
             is_configured, config_message = self._check_data_directory_configured()
             if not is_configured:
@@ -569,32 +647,107 @@ class RAG_Server:
             response += f"Total chunks in database: {total_chunks}\n"
             response += f"Total content size: {total_chunk_size:,} characters"
 
-            print("##########################################################")
-            print("############### ENDING LIST INGESTED FILES ###############")
-            print("##########################################################")
-            
             return response
             
         except Exception as e:
             error_msg = f"Error listing ingested files: {str(e)}"
             logger.error(error_msg)
             return error_msg
+        
+    @mcp.tool()
+    def ingest_new_documents(self) -> str:
+        """
+        Incrementally ingests only new documents from the configured data directory into the vector database.
+
+        This tool scans the local data directory and compares files against existing entries in the ChromaDB
+        using file-level hashing. Only documents that have NOT been previously ingested are processed.
+
+        Workflow:
+        1. Retrieves existing file hashes from the vector database
+        2. Scans the data directory for all supported documents
+        3. Filters out files that already exist in the database
+        4. Processes remaining new files (chunking + embedding)
+        5. Stores new vector embeddings in ChromaDB
+
+        IMPORTANT:
+        - This is a non-destructive, incremental ingestion operation
+        - Existing documents in the database are NOT modified or deleted
+        - Only completely new files are added
+        - Files are identified using file_hash (not file name)
+
+        Use cases:
+        - Adding new study materials without reprocessing the entire dataset
+        - Periodic syncing of a growing document folder
+        - Efficient updates when only a subset of files changed
+
+        Returns:
+        - A status message indicating success or that no new files were found
+
+        Behavior notes:
+        - Skips ingestion if no new files are detected
+        - Logs detailed ingestion progress for debugging
+        """
+        try:
+            existing_hashes = self._get_existing_file_hashes()
+
+            data_path = self._get_data_directory()
+            pages = self._process_documents_pages(data_path)
+
+            # Filter pages belonging to new files only
+            new_pages = [p for p in pages if p["file_hash"] not in existing_hashes]
+
+            if not new_pages:
+                logger.info("\nNo new files to ingest.\n")
+                return "No new files to ingest."
+            
+            logger.info("\nFound new files to ingest!\n")
+
+            self._ingest_files(pages = new_pages)
+            
+        except ValueError as e:
+            logger.warning(f"Skipping auto-ingestion: {e}")
+            return
+        except Exception as e:
+            logger.error(f"Failed during auto-ingestion: {e}")
 
     @mcp.tool()
     def reingest_data_directory(self) -> str:
         """
-        Performs a complete re-ingestion of all files from the configured data directory into the vector database.
+        Performs a full reset and re-ingestion of the entire document knowledge base from the configured data directory.
 
-        This tool first clears the existing database of all documents and then processes all files in the data directory from scratch.
-        It is particularly useful when:
-        - New files have been added to the data directory and need to be included in the knowledge base.
-        - Existing files have been updated and their contents need to be re-indexed.
-        - You want to ensure the vector database is in a clean, consistent state with the latest file versions.
+        This tool completely rebuilds the vector database from scratch.
 
-        The process is atomic; it completely replaces the old database with a new one.
+        Process overview:
+        1. Deletes the existing ChromaDB collection (removes all stored embeddings and metadata)
+        2. Recreates a fresh empty collection
+        3. Scans the configured data directory for all supported documents
+        4. Processes documents (loading → chunking → embedding)
+        5. Stores all embeddings into the vector database
+
+        IMPORTANT (DESTRUCTIVE OPERATION):
+        - This operation permanently deletes all previously stored embeddings
+        - Any incremental updates, deletions, or partial ingestion states are lost
+        - The database state is fully replaced after execution
+
+        Use cases:
+        - Major dataset updates where many files have changed
+        - Fixing inconsistencies or corruption in the vector database
+        - Updating ingestion pipeline logic (chunking, embedding model, metadata schema)
+        - Rebuilding the system after configuration or model changes
+
+        Guarantees:
+        - Final database state reflects exactly the contents of the data directory at execution time
+        - No duplicate or stale embeddings remain after completion
 
         Returns:
-            A status message indicating the success or failure of the re-ingestion process, including the final document count.
+            A status message indicating:
+            - success or failure of the reingestion process
+            - total number of documents/chunks stored in the database
+
+        Side effects:
+        - Fully resets vector database state
+        - Recomputes all embeddings from scratch
+        - May be time-consuming for large datasets
         """
         try:
             is_configured, config_message = self._check_data_directory_configured()
@@ -625,23 +778,65 @@ class RAG_Server:
             logger.error(error_msg)
             return error_msg
 
+    # Ok ne treba nam bas, ali neka
     @mcp.tool()
     def get_rag_status(self) -> Dict[str, Any]:
         """
-        Provides a comprehensive overview of the RAG system's status and configuration.
+        Returns a comprehensive diagnostic snapshot of the current RAG system state, configuration, and runtime environment.
 
-        This tool is essential for diagnosing issues and understanding the current state of the system.
-        It returns a detailed report including:
-        - System Status: Whether the server is active, the database is initialized, and the total number of documents.
-        - Database Configuration: The type of database, its storage directory, and collection details.
-        - Data Directory: The path to the data directory, whether it exists, and how it's configured.
-        - Environment Variables: The status of relevant environment variables (e.g., API keys, custom paths).
-        - Configuration Priority: The order in which the system looks for configuration settings.
+        This tool is intended for system inspection, debugging, and verification of correct setup.
 
-        This tool helps you to:
-        - Verify that the system is running correctly.
-        - Debug configuration problems related to data and database directories.
-        - Check which environment variables are being used.
+        It aggregates information across all major components of the RAG pipeline:
+
+        1. SYSTEM STATUS
+        - Whether the MCP server is running
+        - Whether the ChromaDB client and collection are initialized
+        - Total number of documents (chunks) currently stored
+        - Whether auto-ingestion is functionally enabled
+
+        2. DATABASE CONFIGURATION
+        - Vector database type (ChromaDB)
+        - Storage directory location and existence status
+        - Collection name and source configuration
+        - Whether configuration originates from environment variables or defaults
+
+        3. DATA DIRECTORY STATUS
+        - Path to the document ingestion directory
+        - Whether the directory exists and is accessible
+        - Whether it is properly configured via environment variables or workspace defaults
+
+        4. ENVIRONMENT VARIABLES
+        - Status of all relevant runtime configuration variables (e.g., RAG_DATA_DIR, RAG_DB_DIR)
+        - Whether each variable is set and its current value
+
+        5. CONFIGURATION PRIORITY
+        - Order in which the system resolves:
+            • Data directory location
+            • Database storage location
+
+        Use cases:
+        - Debugging ingestion or retrieval issues
+        - Verifying correct system initialization
+        - Checking whether documents were successfully indexed
+        - Diagnosing missing or misconfigured environment variables
+        - Auditing current system state before reingestion or reset operations
+
+        Returns:
+            A structured dictionary containing:
+            - system status
+            - database configuration
+            - data directory information
+            - environment variable state
+            - configuration resolution rules
+
+        Error behavior:
+        - If an internal failure occurs, returns a minimal diagnostic object with:
+        - error message
+        - partial system status (safe fallback state)
+
+        Notes:
+        - This tool is read-only and does not modify system state
+        - Safe to call at any time for debugging or monitoring purposes
         """
         try:
             doc_count = self.collection.count() if self.collection else 0
@@ -655,7 +850,7 @@ class RAG_Server:
                     "path": str(data_directory),
                     "exists": data_directory.exists(),
                     "configured": True,
-                    "source": "environment" if os.getenv('LLAMA_RAG_DATA_DIR') else "workspace"
+                    "source": "environment" if os.getenv('RAG_DATA_DIR') else "workspace"
                 }
             except ValueError as e:
                 data_directory_status = {
@@ -667,17 +862,13 @@ class RAG_Server:
                 }
             
             env_vars = {
-                "LLAMA_RAG_DATA_DIR": {
-                    "set": bool(os.getenv('LLAMA_RAG_DATA_DIR')),
-                    "value": os.getenv('LLAMA_RAG_DATA_DIR')
+                "RAG_DATA_DIR": {
+                    "set": bool(os.getenv('RAG_DATA_DIR')),
+                    "value": os.getenv('RAG_DATA_DIR')
                 },
-                "LLAMA_RAG_DB_DIR": {
-                    "set": bool(os.getenv('LLAMA_RAG_DB_DIR')),
-                    "value": os.getenv('LLAMA_RAG_DB_DIR')
-                },
-                "LLAMA_CLOUD_API_KEY": {
-                    "set": bool(os.getenv('LLAMA_CLOUD_API_KEY')),
-                    "value": "[REDACTED]" if os.getenv('LLAMA_CLOUD_API_KEY') else None
+                "RAG_DB_DIR": {
+                    "set": bool(os.getenv('RAG_DB_DIR')),
+                    "value": os.getenv('RAG_DB_DIR')
                 }
             }
             
@@ -685,8 +876,8 @@ class RAG_Server:
                 "type": "ChromaDB",
                 "directory": str(db_directory),
                 "exists": db_directory.exists(),
-                "collection_name": "rag_documents",
-                "source": "environment" if os.getenv('LLAMA_RAG_DB_DIR') else "standard"
+                "collection_name": "study_materials",
+                "source": "environment" if os.getenv('RAG_DB_DIR') else "standard"
             }
             
             system_status = {
@@ -705,14 +896,12 @@ class RAG_Server:
                 "environment_variables": env_vars,
                 "configuration": {
                     "data_dir_priority": [
-                        "LLAMA_RAG_DATA_DIR environment variable",
-                        "./data in current working directory",
-                        "Error if neither found"
+                        "RAG_DATA_DIR environment variable",
+                        "Error if not found"
                     ],
                     "db_dir_priority": [
-                        "LLAMA_RAG_DB_DIR environment variable",
-                        "~/.local/share/rag-server (XDG standard)",
-                        "./chroma in current working directory"
+                        "RAG_DB_DIR environment variable",
+                        "./chromadb in current working directory"
                     ]
                 }
             }
@@ -728,24 +917,153 @@ class RAG_Server:
                     "auto_ingestion_enabled": False
                 }
             }
+        
+    @mcp.tool()
+    def reingest_data_directory(self) -> str:
+        """
+            Performs a full reset and re-ingestion of all documents from the configured data directory.
+
+            This tool:
+            1. Deletes the existing ChromaDB collection for study materials
+            2. Recreates an empty collection with the same name
+            3. Scans the configured data directory for all supported files
+            4. Processes, chunks, and embeds all documents
+            5. Stores the newly generated embeddings in the vector database
+
+            IMPORTANT:
+            - This operation is destructive and will permanently remove all existing vectors
+            - It should only be used when you want a full refresh of the knowledge base
+            - Any previously indexed incremental changes will be lost
+
+            Use cases:
+            - After major dataset updates
+            - When ingestion logic has changed
+            - When database corruption is suspected
+
+            Returns:
+            - A status message with the final number of ingested chunks
+        """
+        try:
+            is_configured, config_message = self._check_data_directory_configured()
+            if not is_configured:
+                return config_message
+
+            if not self.chroma_client:
+                return "Error: ChromaDB client is not initialized."
+
+            collection_name = "study_materials"
+
+            logger.info("Starting full re-ingestion process...")
+
+            # 1. Delete existing collection
+            try:
+                self.chroma_client.delete_collection(name=collection_name)
+                logger.info(f"Deleted existing collection '{collection_name}'.")
+            except Exception:
+                logger.warning("Collection did not exist or could not be deleted.")
+
+            # 2. Recreate collection
+            self.collection = self.chroma_client.get_or_create_collection(
+                name=collection_name,
+                metadata={"description": "Collection for RAG document storage"}
+            )
+
+            logger.info("Created fresh collection.")
+
+            # 3. Re-ingest all files
+            self._auto_ingest_files()
+
+            final_count = self.collection.count()
+
+            return f"Re-ingestion complete. Database now contains {final_count} chunks."
+
+        except Exception as e:
+            logger.error(f"Re-ingestion failed: {e}")
+            return f"Error during re-ingestion: {str(e)}"
+
+    @mcp.tool()
+    def delete_files_from_db(self, file_names: List[str]) -> str:
+        """
+            Deletes all vector chunks associated with one or more files from the database.
+
+            This tool performs a metadata-filtered deletion in ChromaDB using file names.
+
+            Behavior:
+            - Finds all chunks where metadata.file_name matches any of the provided names
+            - Deletes all matching vector entries from the collection
+            - Does NOT affect other files or the collection structure
+
+            Args:
+                file_names (List[str]):
+                    List of file names to remove from the vector database
+
+            IMPORTANT:
+            - This operation is irreversible for the selected files
+            - Only affects embeddings stored in ChromaDB, not the actual files on disk
+            - File names must match exactly (case-sensitive unless normalized earlier)
+
+            Use cases:
+            - Removing outdated documents
+            - Fixing incorrect ingestion
+            - Cleaning specific datasets without full reset
+
+            Returns:
+            - Confirmation message with deletion result or error information
+        """
+        try:
+            if not self.collection:
+                return "Error: Collection not initialized."
+
+            if not file_names:
+                return "No file names provided."
+
+            # Multiple files → use $in operator
+            result = self.collection.delete(where={"file_name": {"$in": file_names}})
+
+            return f"Delete result {result}"
+
+        except Exception as e:
+            return f"Error deleting files: {str(e)}"
+        
+    #####################################################################################################################
+    #################################################### MCP PROMPTS ####################################################
+    #####################################################################################################################
 
     @mcp.prompt
     def rag_analysis_prompt(self, topic: str) -> Message:
         """
-        Generates a sophisticated prompt to guide the AI in performing an in-depth analysis of documents related to a specific topic.
+        Generates a structured research prompt that instructs the AI to perform an in-depth, multi-step analysis over the RAG knowledge base for a given topic.
 
-        This tool is designed to kickstart a detailed investigation into a subject by leveraging the RAG system's capabilities.
-        It constructs a prompt that instructs the AI to:
-        1. Query the knowledge base for information on the given topic.
-        2. Synthesize the findings into a comprehensive summary.
-        3. Identify key insights, patterns, and connections within the documents.
-        4. Suggest areas for further exploration.
-        5. Cite the sources from the retrieved documents to support its analysis.
+        This tool does not execute retrieval or analysis directly. Instead, it creates a guided instruction prompt that triggers a full RAG reasoning workflow in a downstream LLM.
 
-        Use this tool to:
-        - Initiate a research task on a particular topic.
-        - Generate a structured analysis of your documents.
-        - Uncover deeper insights that may not be apparent from a simple query.
+        The generated prompt instructs the AI to:
+
+        1. Query the vector database for documents related to the specified topic
+        2. Extract and synthesize relevant information from retrieved chunks
+        3. Produce a structured summary of key findings
+        4. Identify patterns, insights, and relationships across documents
+        5. Suggest directions for further investigation
+        6. Cite sources based on retrieved document metadata
+
+        Use cases:
+        - Initiating deep research workflows over the document corpus
+        - Generating structured analytical reports from stored knowledge
+        - Exploring complex topics that require multi-document reasoning
+        - Producing study notes or synthesized summaries from raw sources
+
+        Args:
+            topic (str):
+                The subject or concept to analyze across the document collection
+
+        Returns:
+            Message:
+                A formatted user message containing a structured instruction prompt
+                that guides the LLM to perform retrieval + synthesis using the RAG system
+
+        Behavior notes:
+        - This tool does NOT perform retrieval itself
+        - It depends on downstream tool use (e.g., query_documents)
+        - Designed to bootstrap higher-level reasoning workflows over the RAG system
         """
         text = dedent(f"""
           Please analyze the documents in the RAG database related to '{topic}'. 
@@ -761,7 +1079,7 @@ class RAG_Server:
         
         return Message(
             role="user",
-            content=TextContent(type="text", text=text)
+            content=text #TextContent(type="text", text=text)
         )
     
 class ChunkingStrategy:
@@ -807,10 +1125,23 @@ class ChunkingStrategy:
         else:
             raise ValueError("Unknown chunking method: choose 'fixed' or 'recursive'.")
 
-
 if __name__ == "__main__":
     # Create an instance of our service, which will register the tools.
     rag = RAG_Server()
+
+    print(rag.list_ingested_files())
+
+    #print(rag.query_documents("Give me types of performance testing"))
+    
+    #rag.ingest_new_documents()
+
+    #print(rag.get_rag_status())
+
+    #print(rag.rag_analysis_prompt(topic = "SLAYYYY"))
+
+    #print(rag.reingest_data_directory())
+
+    #print(rag.delete_files_from_db(["new document test.txt", "Predavanje 3.pdf"]))
 
     # Run the MCP server
     logger.info("Starting RAG MCP Server...")
