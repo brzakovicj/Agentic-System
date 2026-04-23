@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from pydoc import text
 import uuid
 import numpy as np
 import hashlib
@@ -13,6 +14,9 @@ from datetime import datetime
 # FastMCP imports
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
+
+# Prompt manager
+from agents.prompts.prompt_manager import PromptManager
 
 # ChromaDB imports
 import chromadb
@@ -57,6 +61,8 @@ class RAG_Server:
 
         self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
         self.cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
+
+        self.prompt_manager = PromptManager()
 
         self._initialize_chromadb()
 
@@ -417,61 +423,7 @@ class RAG_Server:
     #################################################### MCP TOOLS ####################################################
     ###################################################################################################################
     
-    # @mcp.tool()
-    def query_documents(self, query: str, n_results: int = 5, include_metadata: bool = True, top_n: int = 3) -> str: # Ogranicenje za top_n?
-        """
-        Performs semantic search over the vector database to retrieve and rerank the most relevant document chunks for a given query.
-
-        This tool executes a two-stage retrieval process:
-
-        1. INITIAL RETRIEVAL (Vector Search):
-        - Uses ChromaDB to perform semantic similarity search over stored document embeddings
-        - Retrieves the top N candidate chunks based on vector similarity (controlled by `n_results`)
-
-        2. RERANKING (Cross-Encoder):
-        - Applies a cross-encoder model to rerank retrieved chunks for improved relevance accuracy
-        - Produces a refined ranking of the most semantically relevant results
-        - Final output is limited to `top_n` results
-
-        This hybrid approach improves accuracy by combining fast vector search with deeper semantic scoring.
-
-        Use cases:
-        - Finding precise answers in large document collections
-        - Extracting contextually relevant passages across multiple files
-        - Improving search accuracy beyond embedding similarity
-        - Supporting question answering and RAG-based reasoning
-
-        Args:
-            query (str):
-                The natural language search query used to retrieve relevant document chunks.
-
-            n_results (int, default=5):
-                Number of candidate chunks retrieved from the vector database before reranking.
-                Higher values improve recall but increase latency.
-
-            include_metadata (bool, default=True):
-                Whether to include document metadata (file name, source path, page number) in the output.
-
-            top_n (int, default=3):
-                Number of final results returned after reranking.
-                Must be ≤ n_results for meaningful ranking behavior.
-
-        Returns:
-            A formatted string containing:
-            - The original query
-            - Top-ranked document chunks after reranking
-            - Optional metadata (source file, page number)
-            - Relevance scores and similarity scores
-
-        Scoring:
-            - Similarity Score: cosine distance-based similarity from vector search (pre-rerank)
-            - Relevance Score: cross-encoder score (final ranking signal)
-
-        Notes:
-        - This tool prioritizes precision over recall in the final output due to reranking
-        - Increasing `n_results` improves candidate diversity for reranking
-        - `top_n` controls final output size after reranking
-        """
+    async def _query_documents(self, query: str, n_results: int = 5, include_metadata: bool = True, top_n: int = 3) -> str: # Ogranicenje za top_n?        
         try:
             ################ RETRIEVE ################
 
@@ -550,22 +502,7 @@ class RAG_Server:
             return error_msg
 
     # OK treba verovatno izmeniti metadata koje se izlistavaju i generalno koje se cuvaju u vectorstore
-    # @mcp.tool()
-    def list_ingested_files(self) -> str:
-        """
-        Provides a comprehensive list of all files that have been successfully ingested into the vector database.
-
-        This tool is useful for:
-        - Verifying which files are included in the knowledge base.
-        - Checking the metadata of each file, such as file type, size, and ingestion date.
-        - Understanding how documents are chunked and stored in the database.
-
-        The output includes:
-        - A summary of each ingested file with its path, type, size, and modification dates.
-        - The number of chunks each file has been divided into.
-        - The total size of the content stored in the database.
-        """
-
+    async def _list_ingested_files(self) -> str:
         try:
             is_configured, config_message = self._check_data_directory_configured()
             if not is_configured:
@@ -625,39 +562,7 @@ class RAG_Server:
             logger.error(error_msg)
             return error_msg
         
-    # @mcp.tool()
-    def ingest_new_documents(self) -> str:
-        """
-        Incrementally ingests only new documents from the configured data directory into the vector database.
-
-        This tool scans the local data directory and compares files against existing entries in the ChromaDB
-        using file-level hashing. Only documents that have NOT been previously ingested are processed.
-
-        Workflow:
-        1. Retrieves existing file hashes from the vector database
-        2. Scans the data directory for all supported documents
-        3. Filters out files that already exist in the database
-        4. Processes remaining new files (chunking + embedding)
-        5. Stores new vector embeddings in ChromaDB
-
-        IMPORTANT:
-        - This is a non-destructive, incremental ingestion operation
-        - Existing documents in the database are NOT modified or deleted
-        - Only completely new files are added
-        - Files are identified using file_hash (not file name)
-
-        Use cases:
-        - Adding new study materials without reprocessing the entire dataset
-        - Periodic syncing of a growing document folder
-        - Efficient updates when only a subset of files changed
-
-        Returns:
-        - A status message indicating success or that no new files were found
-
-        Behavior notes:
-        - Skips ingestion if no new files are detected
-        - Logs detailed ingestion progress for debugging
-        """
+    async def _ingest_new_documents(self) -> str:
         try:
             existing_hashes = self._get_existing_file_hashes()
 
@@ -682,65 +587,7 @@ class RAG_Server:
             logger.error(f"Failed during auto-ingestion: {e}")
 
     # Ok ne treba nam bas, ali neka
-    # @mcp.tool()
-    def get_rag_status(self) -> Dict[str, Any]:
-        """
-        Returns a comprehensive diagnostic snapshot of the current RAG system state, configuration, and runtime environment.
-
-        This tool is intended for system inspection, debugging, and verification of correct setup.
-
-        It aggregates information across all major components of the RAG pipeline:
-
-        1. SYSTEM STATUS
-        - Whether the MCP server is running
-        - Whether the ChromaDB client and collection are initialized
-        - Total number of documents (chunks) currently stored
-        - Whether auto-ingestion is functionally enabled
-
-        2. DATABASE CONFIGURATION
-        - Vector database type (ChromaDB)
-        - Storage directory location and existence status
-        - Collection name and source configuration
-        - Whether configuration originates from environment variables or defaults
-
-        3. DATA DIRECTORY STATUS
-        - Path to the document ingestion directory
-        - Whether the directory exists and is accessible
-        - Whether it is properly configured via environment variables or workspace defaults
-
-        4. ENVIRONMENT VARIABLES
-        - Status of all relevant runtime configuration variables (e.g., RAG_DATA_DIR, RAG_DB_DIR)
-        - Whether each variable is set and its current value
-
-        5. CONFIGURATION PRIORITY
-        - Order in which the system resolves:
-            • Data directory location
-            • Database storage location
-
-        Use cases:
-        - Debugging ingestion or retrieval issues
-        - Verifying correct system initialization
-        - Checking whether documents were successfully indexed
-        - Diagnosing missing or misconfigured environment variables
-        - Auditing current system state before reingestion or reset operations
-
-        Returns:
-            A structured dictionary containing:
-            - system status
-            - database configuration
-            - data directory information
-            - environment variable state
-            - configuration resolution rules
-
-        Error behavior:
-        - If an internal failure occurs, returns a minimal diagnostic object with:
-        - error message
-        - partial system status (safe fallback state)
-
-        Notes:
-        - This tool is read-only and does not modify system state
-        - Safe to call at any time for debugging or monitoring purposes
-        """
+    async def _get_rag_status(self) -> Dict[str, Any]:
         try:
             doc_count = self.collection.count() if self.collection else 0
             
@@ -821,45 +668,7 @@ class RAG_Server:
                 }
             }
         
-    # @mcp.tool()
-    def reingest_data_directory(self) -> str:
-        """
-        Performs a full reset and re-ingestion of the entire document knowledge base from the configured data directory.
-
-        This tool completely rebuilds the vector database from scratch.
-
-        Process overview:
-        1. Deletes the existing ChromaDB collection (removes all stored embeddings and metadata)
-        2. Recreates a fresh empty collection
-        3. Scans the configured data directory for all supported documents
-        4. Processes documents (loading → chunking → embedding)
-        5. Stores all embeddings into the vector database
-
-        IMPORTANT (DESTRUCTIVE OPERATION):
-        - This operation permanently deletes all previously stored embeddings
-        - Any incremental updates, deletions, or partial ingestion states are lost
-        - The database state is fully replaced after execution
-
-        Use cases:
-        - Major dataset updates where many files have changed
-        - Fixing inconsistencies or corruption in the vector database
-        - Updating ingestion pipeline logic (chunking, embedding model, metadata schema)
-        - Rebuilding the system after configuration or model changes
-
-        Guarantees:
-        - Final database state reflects exactly the contents of the data directory at execution time
-        - No duplicate or stale embeddings remain after completion
-
-        Returns:
-            A status message indicating:
-            - success or failure of the reingestion process
-            - total number of documents/chunks stored in the database
-
-        Side effects:
-        - Fully resets vector database state
-        - Recomputes all embeddings from scratch
-        - May be time-consuming for large datasets
-        """
+    async def _reingest_data_directory(self) -> str:
         try:
             is_configured, config_message = self._check_data_directory_configured()
             if not is_configured:
@@ -898,35 +707,7 @@ class RAG_Server:
             logger.error(f"Re-ingestion failed: {e}")
             return f"Error during re-ingestion: {str(e)}"
 
-    # @mcp.tool()
-    def delete_files_from_db(self, file_names: List[str]) -> str:
-        """
-        Deletes all vector chunks associated with one or more files from the database.
-
-        This tool performs a metadata-filtered deletion in ChromaDB using file names.
-
-        Behavior:
-        - Finds all chunks where metadata.file_name matches any of the provided names
-        - Deletes all matching vector entries from the collection
-        - Does NOT affect other files or the collection structure
-
-        Args:
-            file_names (List[str]):
-                List of file names to remove from the vector database
-
-        IMPORTANT:
-        - This operation is irreversible for the selected files
-        - Only affects embeddings stored in ChromaDB, not the actual files on disk
-        - File names must match exactly (case-sensitive unless normalized earlier)
-
-        Use cases:
-        - Removing outdated documents
-        - Fixing incorrect ingestion
-        - Cleaning specific datasets without full reset
-
-        Returns:
-        - Confirmation message with deletion result or error information
-        """
+    async def _delete_files_from_db(self, file_names: List[str]) -> str:
         try:
             if not self.collection:
                 return "Error: Collection not initialized."
@@ -946,69 +727,301 @@ class RAG_Server:
     #################################################### MCP PROMPTS ####################################################
     #####################################################################################################################
 
-    # @mcp.prompt
-    def rag_analysis_prompt(self, topic: str) -> Message:
-        """
-        Generates a structured research prompt that instructs the AI to perform an in-depth, multi-step analysis over the RAG knowledge base for a given topic.
-
-        This tool does not execute retrieval or analysis directly. Instead, it creates a guided instruction prompt that triggers a full RAG reasoning workflow in a downstream LLM.
-
-        The generated prompt instructs the AI to:
-
-        1. Query the vector database for documents related to the specified topic
-        2. Extract and synthesize relevant information from retrieved chunks
-        3. Produce a structured summary of key findings
-        4. Identify patterns, insights, and relationships across documents
-        5. Suggest directions for further investigation
-        6. Cite sources based on retrieved document metadata
-
-        Use cases:
-        - Initiating deep research workflows over the document corpus
-        - Generating structured analytical reports from stored knowledge
-        - Exploring complex topics that require multi-document reasoning
-        - Producing study notes or synthesized summaries from raw sources
-
-        Args:
-            topic (str):
-                The subject or concept to analyze across the document collection
-
-        Returns:
-            Message:
-                A formatted user message containing a structured instruction prompt
-                that guides the LLM to perform retrieval + synthesis using the RAG system
-
-        Behavior notes:
-        - This tool does NOT perform retrieval itself
-        - It depends on downstream tool use (e.g., query_documents)
-        - Designed to bootstrap higher-level reasoning workflows over the RAG system
-        """
-        text = dedent(f"""
-          Please analyze the documents in the RAG database related to '{topic}'. 
-
-          First, query the database for relevant information about this topic, then provide:
-          1. A comprehensive summary of the key points
-          2. Any important insights or patterns you notice
-          3. Potential areas for further investigation
-          4. Sources and references from the retrieved documents
-
-          Use the query_documents tool to search for information about '{topic}' and base your analysis on the retrieved content.
-          """)
+    async def _rag_analysis_prompt(self, topic: str) -> Message:
+        text = self.prompt_manager.get("rag_analysis_prompt", topic=topic)
+        return Message(role="user", content=text)
         
-        return Message(
-            role="user",
-            content=text
-        )
+rag = RAG_Server()
 
+@mcp.tool()
+async def query_documents(query: str, n_results: int = 5, include_metadata: bool = True, top_n: int = 3) -> str:
+    """
+    Performs semantic search over the vector database to retrieve and rerank the most relevant document chunks for a given query.
+
+    This tool executes a two-stage retrieval process:
+
+    1. INITIAL RETRIEVAL (Vector Search):
+    - Uses ChromaDB to perform semantic similarity search over stored document embeddings
+    - Retrieves the top N candidate chunks based on vector similarity (controlled by `n_results`)
+
+    2. RERANKING (Cross-Encoder):
+    - Applies a cross-encoder model to rerank retrieved chunks for improved relevance accuracy
+    - Produces a refined ranking of the most semantically relevant results
+    - Final output is limited to `top_n` results
+
+    This hybrid approach improves accuracy by combining fast vector search with deeper semantic scoring.
+
+    Use cases:
+    - Finding precise answers in large document collections
+    - Extracting contextually relevant passages across multiple files
+    - Improving search accuracy beyond embedding similarity
+    - Supporting question answering and RAG-based reasoning
+
+    Args:
+        query (str):
+            The natural language search query used to retrieve relevant document chunks.
+
+        n_results (int, default=5):
+            Number of candidate chunks retrieved from the vector database before reranking.
+            Higher values improve recall but increase latency.
+
+        include_metadata (bool, default=True):
+            Whether to include document metadata (file name, source path, page number) in the output.
+
+        top_n (int, default=3):
+            Number of final results returned after reranking.
+            Must be ≤ n_results for meaningful ranking behavior.
+
+    Returns:
+        A formatted string containing:
+        - The original query
+        - Top-ranked document chunks after reranking
+        - Optional metadata (source file, page number)
+        - Relevance scores and similarity scores
+
+    Scoring:
+        - Similarity Score: cosine distance-based similarity from vector search (pre-rerank)
+        - Relevance Score: cross-encoder score (final ranking signal)
+
+    Notes:
+    - This tool prioritizes precision over recall in the final output due to reranking
+    - Increasing `n_results` improves candidate diversity for reranking
+    - `top_n` controls final output size after reranking
+    """
+    return await rag._query_documents(query=query, n_results=n_results, include_metadata=include_metadata, top_n=top_n)
+
+@mcp.tool()
+async def list_ingested_files() -> str:
+    """
+    Provides a comprehensive list of all files that have been successfully ingested into the vector database.
+
+    This tool is useful for:
+    - Verifying which files are included in the knowledge base.
+    - Checking the metadata of each file, such as file type, size, and ingestion date.
+    - Understanding how documents are chunked and stored in the database.
+
+    The output includes:
+    - A summary of each ingested file with its path, type, size, and modification dates.
+    - The number of chunks each file has been divided into.
+    - The total size of the content stored in the database.
+    """
+    return await rag._list_ingested_files()
+
+@mcp.tool()
+async def ingest_new_documents() -> str:
+    """
+    Incrementally ingests only new documents from the configured data directory into the vector database.
+
+    This tool scans the local data directory and compares files against existing entries in the ChromaDB
+    using file-level hashing. Only documents that have NOT been previously ingested are processed.
+
+    Workflow:
+    1. Retrieves existing file hashes from the vector database
+    2. Scans the data directory for all supported documents
+    3. Filters out files that already exist in the database
+    4. Processes remaining new files (chunking + embedding)
+    5. Stores new vector embeddings in ChromaDB
+
+    IMPORTANT:
+    - This is a non-destructive, incremental ingestion operation
+    - Existing documents in the database are NOT modified or deleted
+    - Only completely new files are added
+    - Files are identified using file_hash (not file name)
+
+    Use cases:
+    - Adding new study materials without reprocessing the entire dataset
+    - Periodic syncing of a growing document folder
+    - Efficient updates when only a subset of files changed
+
+    Returns:
+    - A status message indicating success or that no new files were found
+
+    Behavior notes:
+    - Skips ingestion if no new files are detected
+    - Logs detailed ingestion progress for debugging
+    """
+    return await rag._ingest_new_documents()
+
+@mcp.tool()
+async def get_rag_status() -> Dict[str, Any]:
+    """
+    Returns a comprehensive diagnostic snapshot of the current RAG system state, configuration, and runtime environment.
+
+    This tool is intended for system inspection, debugging, and verification of correct setup.
+
+    It aggregates information across all major components of the RAG pipeline:
+
+    1. SYSTEM STATUS
+    - Whether the MCP server is running
+    - Whether the ChromaDB client and collection are initialized
+    - Total number of documents (chunks) currently stored
+    - Whether auto-ingestion is functionally enabled
+
+    2. DATABASE CONFIGURATION
+    - Vector database type (ChromaDB)
+    - Storage directory location and existence status
+    - Collection name and source configuration
+    - Whether configuration originates from environment variables or defaults
+
+    3. DATA DIRECTORY STATUS
+    - Path to the document ingestion directory
+    - Whether the directory exists and is accessible
+    - Whether it is properly configured via environment variables or workspace defaults
+
+    4. ENVIRONMENT VARIABLES
+    - Status of all relevant runtime configuration variables (e.g., RAG_DATA_DIR, RAG_DB_DIR)
+    - Whether each variable is set and its current value
+
+    5. CONFIGURATION PRIORITY
+    - Order in which the system resolves:
+        • Data directory location
+        • Database storage location
+
+    Use cases:
+    - Debugging ingestion or retrieval issues
+    - Verifying correct system initialization
+    - Checking whether documents were successfully indexed
+    - Diagnosing missing or misconfigured environment variables
+    - Auditing current system state before reingestion or reset operations
+
+    Returns:
+        A structured dictionary containing:
+        - system status
+        - database configuration
+        - data directory information
+        - environment variable state
+        - configuration resolution rules
+
+    Error behavior:
+    - If an internal failure occurs, returns a minimal diagnostic object with:
+    - error message
+    - partial system status (safe fallback state)
+
+    Notes:
+    - This tool is read-only and does not modify system state
+    - Safe to call at any time for debugging or monitoring purposes
+    """
+    return await rag._get_rag_status()
+
+@mcp.tool()
+async def reingest_data_directory() -> str:
+    """
+    Performs a full reset and re-ingestion of the entire document knowledge base from the configured data directory.
+
+    This tool completely rebuilds the vector database from scratch.
+
+    Process overview:
+    1. Deletes the existing ChromaDB collection (removes all stored embeddings and metadata)
+    2. Recreates a fresh empty collection
+    3. Scans the configured data directory for all supported documents
+    4. Processes documents (loading → chunking → embedding)
+    5. Stores all embeddings into the vector database
+
+    IMPORTANT (DESTRUCTIVE OPERATION):
+    - This operation permanently deletes all previously stored embeddings
+    - Any incremental updates, deletions, or partial ingestion states are lost
+    - The database state is fully replaced after execution
+
+    Use cases:
+    - Major dataset updates where many files have changed
+    - Fixing inconsistencies or corruption in the vector database
+    - Updating ingestion pipeline logic (chunking, embedding model, metadata schema)
+    - Rebuilding the system after configuration or model changes
+
+    Guarantees:
+    - Final database state reflects exactly the contents of the data directory at execution time
+    - No duplicate or stale embeddings remain after completion
+
+    Returns:
+        A status message indicating:
+        - success or failure of the reingestion process
+        - total number of documents/chunks stored in the database
+
+    Side effects:
+    - Fully resets vector database state
+    - Recomputes all embeddings from scratch
+    - May be time-consuming for large datasets
+    """
+    return await rag._reingest_data_directory()
+
+@mcp.tool()
+async def delete_files_from_db(file_names: List[str]) -> str:
+    """
+    Deletes all vector chunks associated with one or more files from the database.
+
+    This tool performs a metadata-filtered deletion in ChromaDB using file names.
+
+    Behavior:
+    - Finds all chunks where metadata.file_name matches any of the provided names
+    - Deletes all matching vector entries from the collection
+    - Does NOT affect other files or the collection structure
+
+    Args:
+        file_names (List[str]):
+            List of file names to remove from the vector database
+
+    IMPORTANT:
+    - This operation is irreversible for the selected files
+    - Only affects embeddings stored in ChromaDB, not the actual files on disk
+    - File names must match exactly (case-sensitive unless normalized earlier)
+
+    Use cases:
+    - Removing outdated documents
+    - Fixing incorrect ingestion
+    - Cleaning specific datasets without full reset
+
+    Returns:
+    - Confirmation message with deletion result or error information
+    """
+    return await rag._delete_files_from_db(file_names=file_names)
+
+@mcp.add_prompt()
+async def rag_analysis_prompt(topic: str) -> Message:
+    """
+    Generates a structured research prompt that instructs the AI to perform an in-depth, multi-step analysis over the RAG knowledge base for a given topic.
+
+    This tool does not execute retrieval or analysis directly. Instead, it creates a guided instruction prompt that triggers a full RAG reasoning workflow in a downstream LLM.
+
+    The generated prompt instructs the AI to:
+
+    1. Query the vector database for documents related to the specified topic
+    2. Extract and synthesize relevant information from retrieved chunks
+    3. Produce a structured summary of key findings
+    4. Identify patterns, insights, and relationships across documents
+    5. Suggest directions for further investigation
+    6. Cite sources based on retrieved document metadata
+
+    Use cases:
+    - Initiating deep research workflows over the document corpus
+    - Generating structured analytical reports from stored knowledge
+    - Exploring complex topics that require multi-document reasoning
+    - Producing study notes or synthesized summaries from raw sources
+
+    Args:
+        topic (str):
+            The subject or concept to analyze across the document collection
+
+    Returns:
+        Message:
+            A formatted user message containing a structured instruction prompt
+            that guides the LLM to perform retrieval + synthesis using the RAG system
+
+    Behavior notes:
+    - This tool does NOT perform retrieval itself
+    - It depends on downstream tool use (e.g., query_documents)
+    - Designed to bootstrap higher-level reasoning workflows over the RAG system
+    """
+    return await rag._rag_analysis_prompt(topic=topic)
 
 if __name__ == "__main__":
-    # Create an instance of our service, which will register the tools.
-    rag = RAG_Server()
+    # Create an instance of our service, which will register the tools.    
+    # rag = RAG_Server()
 
-    print(rag.list_ingested_files())
+    # print(rag.list_ingested_files())
 
     #print(rag.query_documents("Sta je to aritmeticka sredina?"))
     
-    rag.ingest_new_documents()
+    # rag.ingest_new_documents()
 
     # print(rag.get_rag_status())
 
@@ -1021,4 +1034,4 @@ if __name__ == "__main__":
     # Run the MCP server
     logger.info("Starting RAG MCP Server...")
 
-    # mcp.run("stdio")
+    mcp.run(transport="stdio")

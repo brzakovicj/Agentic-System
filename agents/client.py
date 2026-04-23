@@ -2,7 +2,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.graph import StateGraph
 from langchain_core.messages import HumanMessage, AIMessageChunk
 from typing import AsyncGenerator
-from agents.mcp.config import mcp_config
+from agents.mcp_servers.config import mcp_config
 from agents.graph import build_agent_graph, AgentState
 import asyncio
 
@@ -57,38 +57,34 @@ async def main():
 
     The MultiServerMCPClient allows connection to multiple MCP servers using a single client and config.
     """
-    async with MultiServerMCPClient(
-        connections=mcp_config
-    ) as client:
-        # the get_tools() method returns a list of tools from all the connected servers
-        tools = client.get_tools()
-        graph = build_agent_graph(tools=tools)
+    print(mcp_config)
+    client = MultiServerMCPClient(connections=mcp_config)
 
-        # pass a config with a thread_id to use memory
-        graph_config = {
-            "configurable": {
-                "thread_id": "1"
-            }
+    # the get_tools() method returns a list of tools from all the connected servers
+    tools = await client.get_tools()
+    graph = await build_agent_graph(tools=tools)
+
+    # pass a config with a thread_id to use memory
+    graph_config = {
+        "configurable": {
+            "thread_id": "1"
         }
+    }
 
-        while True:
-            user_input = input("\n\nUSER: ")
-            if user_input in ["quit", "exit"]:
-                break
+    while True:
+        user_input = input("\n\nUSER: ")
+        if user_input in ["quit", "exit"]:
+            break
 
-            print("\n ----  USER  ---- \n\n", user_input)
-            print("\n ----  ASSISTANT  ---- \n\n")
+        print("\n ----  USER  ---- \n\n", user_input)
+        print("\n ----  ASSISTANT  ---- \n\n")
 
-            async for response in stream_graph_response(
-                input = AgentState(messages=[HumanMessage(content=user_input)]),
-                graph = graph, 
-                config = graph_config
-            ):
-                print(response, end="", flush=True)
+        async for response in stream_graph_response(
+            input = AgentState(messages=[HumanMessage(content=user_input)]),
+            graph = graph, 
+            config = graph_config
+        ):
+            print(response, end="", flush=True)
 
 if __name__ == "__main__":
-    # only needed if running in an ipykernel
-    # import nest_asyncio
-    # nest_asyncio.apply()
-
     asyncio.run(main())
