@@ -12,7 +12,7 @@ from datetime import datetime
 
 # FastMCP imports
 from fastmcp import FastMCP
-from fastmcp.prompts import Message#, TextContent
+from fastmcp.prompts import Message
 
 # ChromaDB imports
 import chromadb
@@ -28,9 +28,6 @@ from langchain_text_splitters import (
 )
 
 from sentence_transformers import SentenceTransformer, CrossEncoder
-
-# Debugging formatter
-from pprint import pprint
 
 from transformers import logging as hf_logging
 
@@ -101,32 +98,6 @@ class RAG_Server:
         except Exception as e:
             logger.error(f"Failed to initialize ChromaDB: {e}")
             raise
-
-    # def safe_reset_chromadb(self, chroma_path: str = "./chroma_db") -> bool:
-    #     """Safely reset ChromaDB by deleting the entire directory.
-        
-    #     This is the most reliable way to reset ChromaDB and avoid corruption issues.
-        
-    #     Args:
-    #         chroma_path: Path to the ChromaDB directory
-            
-    #     Returns:
-    #         True if reset was successful, False otherwise
-    #     """
-    #     try:
-    #         if os.path.exists(chroma_path):
-    #             # Add a small delay to ensure any file handles are released
-    #             # time.sleep(0.1)
-    #             shutil.rmtree(chroma_path)
-    #             print(f"Successfully deleted ChromaDB directory: {chroma_path}")
-    #         else:
-    #             print(f"ChromaDB directory does not exist: {chroma_path}")
-            
-    #         return True
-            
-    #     except Exception as e:
-    #         print(f"Error deleting ChromaDB directory: {e}")
-    #         return False
     
     def _get_database_directory(self): # ok
         """Get the ChromaDB persistent directory path with flexible resolution strategy."""
@@ -253,7 +224,9 @@ class RAG_Server:
                 # DEBUG
                 # if elements:
                 #     # Ispisuje sve dostupne atribute metapodataka prvog elementa
-                #     print(f"Dostupni metapodaci za {file_path.name}: {elements[0].metadata.to_dict()}")
+                
+                for e in elements:
+                    logger.info(f"Dostupni metapodaci za {file_path.name}: {e.metadata.to_dict()}")
 
                 # Single doc_id per file
                 doc_id = str(uuid.uuid4())
@@ -296,50 +269,21 @@ class RAG_Server:
         for page in pages:
             logger.info(f"File Name: {page['file_name']}")
             logger.info(f"Page Number: {page['page_number']}")
-            logger.info(f"Text: {page['file_content'][:200]}...")  # Truncate text to 100 characters
-            logger.info("-" * 80)  # Separator for readability
+            logger.info(f"Text: {page['file_content'][:200]}...")
+            logger.info("-" * 80)
             #logger.info(page)
             #logger.info("-" * 80)  # Separator for readability
-
-        # Create a ChunkingStrategy instance with the desired settings.
-        chunker = ChunkingStrategy(chunk_size=300, chunk_overlap=50)
-
-        # ################ DEBUG: CHUNKING TEST ################
-
-        # # Retrieve page information from the new_pages list (using the 11th page as an example).
-        # page = new_pages[11]
-        # file_name = page["file_name"]
-        # file_type = page["file_type"]
-        # page_number = page["page_number"]
-        # text_content = page["text"]
-
-        # # Debug: Print the text content of the selected page.
-        # logger.info(f"Debug - Page Text: {text_content}")
-        
-        # Chunk the document text using the chunk_document method.
-        # chunks = chunker.chunk_document(text_content)
-
-        # # Display file and page details along with the number of chunks generated.
-        # logger.info(f"File: {file_name} (Page Number: {page_number})")
-        # logger.info(f"Number of chunks: {len(chunks)}")
-        # logger.info("-" * 80)
-
-        # # Iterate through each chunk and print its contents.
-        # for idx, chunk in enumerate(chunks):
-        #     logger.info(f"Chunk {idx + 1}:")
-        #     logger.info(chunk)
-        #     logger.info("-" * 80)
         
         ################ CHUNKING ################
         
         all_chunks = []
 
         for page in pages:
-            chunks = chunker.chunk_document(page["file_content"])
+            chunks = self._chunk_document(text = page["file_content"], chunk_size = 300, chunk_overlap = 50)
             
             for chunk in chunks:
                 all_chunks.append({
-                    "id": str(uuid.uuid4()),  # Generate a unique ID for each chunk
+                    "id": str(uuid.uuid4()),
                     "text": chunk,
                     "metadata": {
                         "file_id": page["file_id"],
@@ -350,7 +294,7 @@ class RAG_Server:
                         "page_number": page["page_number"],
                         "last_modified_date": page["last_modified"],
                         "creation_date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        "chunk_method": chunker.method
+                        "chunk_method": "recursive_character",
                     }
                 })
 
@@ -442,11 +386,38 @@ class RAG_Server:
         
         return hashes
 
+    def _chunk_document(self, text: str, method: str = 'recursive', encoding_name: str = "cl100k_base", chunk_size: int = 300, chunk_overlap: int = 50) -> List[str]:
+        """
+        Chunk a document's text using the selected strategy.
+
+        Args:
+            text (str): The document's text to chunk.
+
+        Returns:
+            List[str]: A list of text chunks.
+        """
+        if method == 'fixed':
+            splitter = CharacterTextSplitter.from_tiktoken_encoder(
+                encoding_name=encoding_name, 
+                chunk_size=chunk_size, 
+                chunk_overlap=chunk_overlap
+            )
+            return splitter.split_text(text)
+        elif method == 'recursive':
+            splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+                encoding_name=encoding_name, 
+                chunk_size=chunk_size, 
+                chunk_overlap=chunk_overlap
+            )
+            return splitter.split_text(text)
+        else:
+            raise ValueError("Unknown chunking method: choose 'fixed' or 'recursive'.")
+
     ###################################################################################################################
     #################################################### MCP TOOLS ####################################################
     ###################################################################################################################
     
-    @mcp.tool()
+    # @mcp.tool()
     def query_documents(self, query: str, n_results: int = 5, include_metadata: bool = True, top_n: int = 3) -> str: # Ogranicenje za top_n?
         """
         Performs semantic search over the vector database to retrieve and rerank the most relevant document chunks for a given query.
@@ -579,7 +550,7 @@ class RAG_Server:
             return error_msg
 
     # OK treba verovatno izmeniti metadata koje se izlistavaju i generalno koje se cuvaju u vectorstore
-    @mcp.tool()
+    # @mcp.tool()
     def list_ingested_files(self) -> str:
         """
         Provides a comprehensive list of all files that have been successfully ingested into the vector database.
@@ -654,7 +625,7 @@ class RAG_Server:
             logger.error(error_msg)
             return error_msg
         
-    @mcp.tool()
+    # @mcp.tool()
     def ingest_new_documents(self) -> str:
         """
         Incrementally ingests only new documents from the configured data directory into the vector database.
@@ -710,76 +681,8 @@ class RAG_Server:
         except Exception as e:
             logger.error(f"Failed during auto-ingestion: {e}")
 
-    @mcp.tool()
-    def reingest_data_directory(self) -> str:
-        """
-        Performs a full reset and re-ingestion of the entire document knowledge base from the configured data directory.
-
-        This tool completely rebuilds the vector database from scratch.
-
-        Process overview:
-        1. Deletes the existing ChromaDB collection (removes all stored embeddings and metadata)
-        2. Recreates a fresh empty collection
-        3. Scans the configured data directory for all supported documents
-        4. Processes documents (loading → chunking → embedding)
-        5. Stores all embeddings into the vector database
-
-        IMPORTANT (DESTRUCTIVE OPERATION):
-        - This operation permanently deletes all previously stored embeddings
-        - Any incremental updates, deletions, or partial ingestion states are lost
-        - The database state is fully replaced after execution
-
-        Use cases:
-        - Major dataset updates where many files have changed
-        - Fixing inconsistencies or corruption in the vector database
-        - Updating ingestion pipeline logic (chunking, embedding model, metadata schema)
-        - Rebuilding the system after configuration or model changes
-
-        Guarantees:
-        - Final database state reflects exactly the contents of the data directory at execution time
-        - No duplicate or stale embeddings remain after completion
-
-        Returns:
-            A status message indicating:
-            - success or failure of the reingestion process
-            - total number of documents/chunks stored in the database
-
-        Side effects:
-        - Fully resets vector database state
-        - Recomputes all embeddings from scratch
-        - May be time-consuming for large datasets
-        """
-        try:
-            is_configured, config_message = self._check_data_directory_configured()
-            if not is_configured:
-                return config_message
-            
-            if not self.collection:
-                return "Error: Database is not initialized."
-            
-            logger.info("Clearing existing database before reingestion...")
-            self.chroma_client.delete_collection(name="rag_documents")
-            self.collection = self.chroma_client.create_collection(
-                name="rag_documents",
-                metadata={"description": "Collection for RAG document storage"}
-            )
-            
-            logger.info("Starting reingestion of data directory...")
-            self._auto_ingest_files()
-            
-            final_count = self.collection.count()
-            
-            success_msg = f"Successfully reingested data directory. Database now contains {final_count} documents."
-            logger.info(success_msg)
-            return success_msg
-            
-        except Exception as e:
-            error_msg = f"Error during reingestion: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
-
     # Ok ne treba nam bas, ali neka
-    @mcp.tool()
+    # @mcp.tool()
     def get_rag_status(self) -> Dict[str, Any]:
         """
         Returns a comprehensive diagnostic snapshot of the current RAG system state, configuration, and runtime environment.
@@ -918,30 +821,44 @@ class RAG_Server:
                 }
             }
         
-    @mcp.tool()
+    # @mcp.tool()
     def reingest_data_directory(self) -> str:
         """
-            Performs a full reset and re-ingestion of all documents from the configured data directory.
+        Performs a full reset and re-ingestion of the entire document knowledge base from the configured data directory.
 
-            This tool:
-            1. Deletes the existing ChromaDB collection for study materials
-            2. Recreates an empty collection with the same name
-            3. Scans the configured data directory for all supported files
-            4. Processes, chunks, and embeds all documents
-            5. Stores the newly generated embeddings in the vector database
+        This tool completely rebuilds the vector database from scratch.
 
-            IMPORTANT:
-            - This operation is destructive and will permanently remove all existing vectors
-            - It should only be used when you want a full refresh of the knowledge base
-            - Any previously indexed incremental changes will be lost
+        Process overview:
+        1. Deletes the existing ChromaDB collection (removes all stored embeddings and metadata)
+        2. Recreates a fresh empty collection
+        3. Scans the configured data directory for all supported documents
+        4. Processes documents (loading → chunking → embedding)
+        5. Stores all embeddings into the vector database
 
-            Use cases:
-            - After major dataset updates
-            - When ingestion logic has changed
-            - When database corruption is suspected
+        IMPORTANT (DESTRUCTIVE OPERATION):
+        - This operation permanently deletes all previously stored embeddings
+        - Any incremental updates, deletions, or partial ingestion states are lost
+        - The database state is fully replaced after execution
 
-            Returns:
-            - A status message with the final number of ingested chunks
+        Use cases:
+        - Major dataset updates where many files have changed
+        - Fixing inconsistencies or corruption in the vector database
+        - Updating ingestion pipeline logic (chunking, embedding model, metadata schema)
+        - Rebuilding the system after configuration or model changes
+
+        Guarantees:
+        - Final database state reflects exactly the contents of the data directory at execution time
+        - No duplicate or stale embeddings remain after completion
+
+        Returns:
+            A status message indicating:
+            - success or failure of the reingestion process
+            - total number of documents/chunks stored in the database
+
+        Side effects:
+        - Fully resets vector database state
+        - Recomputes all embeddings from scratch
+        - May be time-consuming for large datasets
         """
         try:
             is_configured, config_message = self._check_data_directory_configured()
@@ -981,34 +898,34 @@ class RAG_Server:
             logger.error(f"Re-ingestion failed: {e}")
             return f"Error during re-ingestion: {str(e)}"
 
-    @mcp.tool()
+    # @mcp.tool()
     def delete_files_from_db(self, file_names: List[str]) -> str:
         """
-            Deletes all vector chunks associated with one or more files from the database.
+        Deletes all vector chunks associated with one or more files from the database.
 
-            This tool performs a metadata-filtered deletion in ChromaDB using file names.
+        This tool performs a metadata-filtered deletion in ChromaDB using file names.
 
-            Behavior:
-            - Finds all chunks where metadata.file_name matches any of the provided names
-            - Deletes all matching vector entries from the collection
-            - Does NOT affect other files or the collection structure
+        Behavior:
+        - Finds all chunks where metadata.file_name matches any of the provided names
+        - Deletes all matching vector entries from the collection
+        - Does NOT affect other files or the collection structure
 
-            Args:
-                file_names (List[str]):
-                    List of file names to remove from the vector database
+        Args:
+            file_names (List[str]):
+                List of file names to remove from the vector database
 
-            IMPORTANT:
-            - This operation is irreversible for the selected files
-            - Only affects embeddings stored in ChromaDB, not the actual files on disk
-            - File names must match exactly (case-sensitive unless normalized earlier)
+        IMPORTANT:
+        - This operation is irreversible for the selected files
+        - Only affects embeddings stored in ChromaDB, not the actual files on disk
+        - File names must match exactly (case-sensitive unless normalized earlier)
 
-            Use cases:
-            - Removing outdated documents
-            - Fixing incorrect ingestion
-            - Cleaning specific datasets without full reset
+        Use cases:
+        - Removing outdated documents
+        - Fixing incorrect ingestion
+        - Cleaning specific datasets without full reset
 
-            Returns:
-            - Confirmation message with deletion result or error information
+        Returns:
+        - Confirmation message with deletion result or error information
         """
         try:
             if not self.collection:
@@ -1029,7 +946,7 @@ class RAG_Server:
     #################################################### MCP PROMPTS ####################################################
     #####################################################################################################################
 
-    @mcp.prompt
+    # @mcp.prompt
     def rag_analysis_prompt(self, topic: str) -> Message:
         """
         Generates a structured research prompt that instructs the AI to perform an in-depth, multi-step analysis over the RAG knowledge base for a given topic.
@@ -1079,51 +996,9 @@ class RAG_Server:
         
         return Message(
             role="user",
-            content=text #TextContent(type="text", text=text)
+            content=text
         )
-    
-class ChunkingStrategy:
-    def __init__(self, method: str = 'recursive', encoding_name: str = "cl100k_base", chunk_size: int = 300, chunk_overlap: int = 50):
-        """
-        Initialize a chunking strategy.
 
-        Args:
-            method (str): The chunking method, e.g. 'fixed' or 'recursive'.
-            encoding_name (str): The name of the encoding to use.
-            chunk_size (int): The size of each chunk.
-            chunk_overlap (int): The overlap between chunks.
-        """
-        self.method = method
-        self.encoding_name = encoding_name
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-
-    def chunk_document(self, text: str) -> List[str]:
-        """
-        Chunk a document's text using the selected strategy.
-
-        Args:
-            text (str): The document's text to chunk.
-
-        Returns:
-            List[str]: A list of text chunks.
-        """
-        if self.method == 'fixed':
-            splitter = CharacterTextSplitter.from_tiktoken_encoder(
-                encoding_name=self.encoding_name, 
-                chunk_size=self.chunk_size, 
-                chunk_overlap=self.chunk_overlap
-            )
-            return splitter.split_text(text)
-        elif self.method == 'recursive':
-            splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-                encoding_name=self.encoding_name, 
-                chunk_size=self.chunk_size, 
-                chunk_overlap=self.chunk_overlap
-            )
-            return splitter.split_text(text)
-        else:
-            raise ValueError("Unknown chunking method: choose 'fixed' or 'recursive'.")
 
 if __name__ == "__main__":
     # Create an instance of our service, which will register the tools.
@@ -1131,11 +1006,11 @@ if __name__ == "__main__":
 
     print(rag.list_ingested_files())
 
-    #print(rag.query_documents("Give me types of performance testing"))
+    #print(rag.query_documents("Sta je to aritmeticka sredina?"))
     
-    #rag.ingest_new_documents()
+    rag.ingest_new_documents()
 
-    #print(rag.get_rag_status())
+    # print(rag.get_rag_status())
 
     #print(rag.rag_analysis_prompt(topic = "SLAYYYY"))
 
