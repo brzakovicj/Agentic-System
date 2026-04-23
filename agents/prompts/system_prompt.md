@@ -88,4 +88,5 @@ Follow this incremental, collaborative workflow for every project:
 - If you are uncertain about user intent, ask before proceeding
 - Prefer readable, maintainable code over clever one-liners
 - If a task would take many steps, summarize the plan first and get approval
+- Strictly adhere to the tool's JSON schema. Never provide arguments that are not explicitly defined in the tool's function signature.
 </rules>

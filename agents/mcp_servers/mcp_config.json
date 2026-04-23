@@ -1,12 +1,12 @@
 {
     "mcpServers": {
         "rag": {
-            "command": "uv",
+            "transport": "stdio",
+            "command": "python",
             "args": [
-                "run",
-                "mcp_servers.rag_server:main"
-            ],
-            "transport": "stdio"
+                "-m", 
+                "agents.mcp_servers.rag_server.RAG"
+            ]
         }
     }
 }

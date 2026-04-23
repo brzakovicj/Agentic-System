@@ -39,11 +39,12 @@ async def stream_graph_response(
 
                 tool_name = tool_chunk.get("name", "")
                 args = tool_chunk.get("args", "")
-                
+                tool_call_str = ""
+
                 if tool_name:
                     tool_call_str = f"\n\n< TOOL CALL: {tool_name} >\n\n"
                 if args:
-                    tool_call_str = args
+                    tool_call_str += args
 
                 yield tool_call_str
             else:
@@ -58,7 +59,7 @@ async def main():
     The MultiServerMCPClient allows connection to multiple MCP servers using a single client and config.
     """
     print(mcp_config)
-    client = MultiServerMCPClient(connections=mcp_config)
+    client = MultiServerMCPClient(connections=mcp_config["mcpServers"])
 
     # the get_tools() method returns a list of tools from all the connected servers
     tools = await client.get_tools()

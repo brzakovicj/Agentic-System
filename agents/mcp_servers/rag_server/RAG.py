@@ -975,7 +975,7 @@ async def delete_files_from_db(file_names: List[str]) -> str:
     """
     return await rag._delete_files_from_db(file_names=file_names)
 
-@mcp.add_prompt()
+@mcp.prompt()
 async def rag_analysis_prompt(topic: str) -> Message:
     """
     Generates a structured research prompt that instructs the AI to perform an in-depth, multi-step analysis over the RAG knowledge base for a given topic.
@@ -1014,24 +1014,9 @@ async def rag_analysis_prompt(topic: str) -> Message:
     return await rag._rag_analysis_prompt(topic=topic)
 
 if __name__ == "__main__":
-    # Create an instance of our service, which will register the tools.    
-    # rag = RAG_Server()
-
-    # print(rag.list_ingested_files())
-
-    #print(rag.query_documents("Sta je to aritmeticka sredina?"))
-    
-    # rag.ingest_new_documents()
-
-    # print(rag.get_rag_status())
-
-    #print(rag.rag_analysis_prompt(topic = "SLAYYYY"))
-
-    #print(rag.reingest_data_directory())
-
-    #print(rag.delete_files_from_db(["new document test.txt", "Predavanje 3.pdf"]))
-
-    # Run the MCP server
-    logger.info("Starting RAG MCP Server...")
-
-    mcp.run(transport="stdio")
+    try:
+        logger.info("Starting RAG MCP Server...")
+        mcp.run(transport="stdio")
+    except Exception as e:
+        logger.exception("SERVER CRASHED")
+        raise
