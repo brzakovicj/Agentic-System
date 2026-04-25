@@ -10,7 +10,6 @@ import os
 
 from agents.prompts.prompt_manager import PromptManager
 
-
 class AgentState(BaseModel):
     messages: Annotated[List, add_messages]
 
@@ -28,7 +27,7 @@ async def build_agent_graph(tools: List[BaseTool] = []):
         tools_json = [tool.model_dump_json(include=["name", "description"]) for tool in tools]
         tools_context="\n".join(tools_json)
         working_dir=os.environ.get("MCP_FILESYSTEM_DIR") if os.environ.get("MCP_FILESYSTEM_DIR") else os.getcwd()
-        system_prompt = prompt_manager.get("system_prompt", tools=tools_context, working_dir=working_dir)
+        system_prompt = prompt_manager.get("system_prompt", tools=tools_context)#, working_dir=working_dir)
 
     def assistant(state: AgentState) -> AgentState:
         response = llm.invoke([SystemMessage(content=system_prompt)] + state.messages)

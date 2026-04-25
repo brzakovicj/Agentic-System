@@ -701,33 +701,20 @@ class RAG_Server:
 rag = RAG_Server()
 
 @mcp.tool()
-async def query_documents(query: str, n_results: int = 5, include_metadata: bool = True, top_n: int = 3) -> str:
+async def query_documents(query: str) -> str:
     """
-    Search documents in the vector database and return the most relevant results.
+    Search the knowledge base.
 
-    This tool performs semantic search with reranking to improve relevance.
+    Input:
+    - query: string
 
-    Arguments:
-        query (str): User search query.
-        n_results (int): Number of candidates retrieved from vector search.
-        include_metadata (bool): Whether to include file metadata in results.
-        top_n (int): Number of final reranked results to return.
-
-    Returns:
-        str: Top matching document chunks with optional metadata.
-
-    Usage:
-        Call this tool when the user asks questions that require searching
-        or retrieving information from stored documents.
-
-        Example:
-        {
-            "query": "what is RAG",
-            "n_results": 5,
-            "include_metadata": true,
-            "top_n": 3
-        }
+    IMPORTANT:
+    - Always pass a plain string
+    - Do NOT wrap it in an object
     """
+    n_results = 5
+    include_metadata = True
+    top_n = 3
     return await rag._query_documents(query=query, n_results=n_results, include_metadata=include_metadata, top_n=top_n)
 
 @mcp.tool()
