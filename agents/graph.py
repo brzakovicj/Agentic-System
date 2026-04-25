@@ -33,7 +33,7 @@ async def build_agent_graph(tools: List[BaseTool] = []):
     def assistant(state: AgentState) -> AgentState:
         response = llm.invoke([SystemMessage(content=system_prompt)] + state.messages)
         state.messages.append(response)
-        return 
+        return state
     
     builder = StateGraph(AgentState)
 

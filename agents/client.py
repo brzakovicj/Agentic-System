@@ -27,7 +27,7 @@ async def stream_graph_response(
         input=input,
         stream_mode="messages",
         config=config
-    ):
+    ):        
         if isinstance(message_chunk, AIMessageChunk):
             if message_chunk.response_metadata:
                 finish_reason = message_chunk.response_metadata.get("finish_reason", "")
@@ -35,18 +35,17 @@ async def stream_graph_response(
                     yield "\n\n"
 
             if message_chunk.tool_call_chunks:
-                tool_chunk = message_chunk.tool_call_chunks[0]
+                for tool_chunk in message_chunk.tool_call_chunks:
+                    tool_name = tool_chunk.get("name", "")
+                    args = tool_chunk.get("args", "")
+                    tool_call_str = ""
 
-                tool_name = tool_chunk.get("name", "")
-                args = tool_chunk.get("args", "")
-                tool_call_str = ""
+                    if tool_name:
+                        tool_call_str += f"\n\n< TOOL CALL: {tool_name} >\n\n"
+                    if args:
+                        tool_call_str += args
 
-                if tool_name:
-                    tool_call_str = f"\n\n< TOOL CALL: {tool_name} >\n\n"
-                if args:
-                    tool_call_str += args
-
-                yield tool_call_str
+                    yield tool_call_str
             else:
                 yield message_chunk.content
             continue
