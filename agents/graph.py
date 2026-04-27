@@ -89,7 +89,7 @@ class IntentClassifierNode:
 
         # Dynamic routing based on intent
         if response.intent == "tools":
-            next_node = "tools"
+            next_node = "ToolAssistant_Node"
         elif response.intent == "default":
             next_node = "DefaultAssistant_Node"
         else:

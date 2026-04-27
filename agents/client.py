@@ -62,6 +62,10 @@ async def main():
 
     # the get_tools() method returns a list of tools from all the connected servers
     tools = await client.get_tools()
+
+    for t in tools:
+       print(t.name, t.description)
+
     graph = await AgentWorkflow(tools=tools)._create_graph()
 
     # pass a config with a thread_id to use memory
