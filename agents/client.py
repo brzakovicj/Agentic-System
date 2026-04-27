@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph
 from langchain_core.messages import HumanMessage, AIMessageChunk
 from typing import AsyncGenerator
 from agents.mcp_servers.config import mcp_config
-from agents.graph import build_agent_graph, AgentState
+from agents.graph import AgentWorkflow, AgentState
 import asyncio
 
 async def stream_graph_response(
@@ -62,7 +62,7 @@ async def main():
 
     # the get_tools() method returns a list of tools from all the connected servers
     tools = await client.get_tools()
-    graph = await build_agent_graph(tools=tools)
+    graph = await AgentWorkflow(tools=tools)._create_graph()
 
     # pass a config with a thread_id to use memory
     graph_config = {
@@ -80,7 +80,7 @@ async def main():
         print("\n ----  ASSISTANT  ---- \n\n")
 
         async for response in stream_graph_response(
-            input = AgentState(messages=[HumanMessage(content=user_input)]),
+            input = AgentState(messages = [HumanMessage(content=user_input)]),
             graph = graph, 
             config = graph_config
         ):

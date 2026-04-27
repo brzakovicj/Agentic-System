@@ -1,52 +1,172 @@
 from langchain_ollama.chat_models import ChatOllama
-from langgraph.graph import StateGraph, add_messages, START
+from langgraph.graph import END, StateGraph, add_messages, START
 from langchain_core.messages import SystemMessage
-from pydantic import BaseModel
-from typing import List, Annotated
+from pydantic import BaseModel, Field
+from typing import List, Annotated, Literal
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.tools import BaseTool
+
+from langchain_core.runnables import Runnable
+from langgraph.types import Command
+
 import os
 
 from agents.prompts.prompt_manager import PromptManager
 
 class AgentState(BaseModel):
-    messages: Annotated[List, add_messages]
+    messages: Annotated[List, add_messages] = Field(default_factory=list)
+    next_node: str | None = None
 
-async def build_agent_graph(tools: List[BaseTool] = []):
-    prompt_manager = PromptManager()
+class LLMFactory:
+    def __init__(self):
+        self._llm = None
 
-    llm = ChatOllama(
-        model="llama3.2",
-        temperature=0,
-    )
-    if tools:
-        llm = llm.bind_tools(tools)
-        
-        #inject tools into system prompt
-        tools_json = [tool.model_dump_json(include=["name", "description"]) for tool in tools]
-        tools_context="\n".join(tools_json)
-        working_dir=os.environ.get("MCP_FILESYSTEM_DIR") if os.environ.get("MCP_FILESYSTEM_DIR") else os.getcwd()
-        system_prompt = prompt_manager.get("system_prompt", tools=tools_context)#, working_dir=working_dir)
+    def get_base_llm(self):
+        if self._llm is None:
+            self._llm = ChatOllama(
+                model="llama3.2",
+                temperature=0,
+            )
 
-    def assistant(state: AgentState) -> AgentState:
-        response = llm.invoke([SystemMessage(content=system_prompt)] + state.messages)
-        state.messages.append(response)
-        return state
+        return self._llm
     
-    builder = StateGraph(AgentState)
+    def get_tool_llm(self, tools: List[BaseTool] = []):
+        llm = self.get_base_llm()
+        return llm.bind_tools(tools)
+    
+    def get_llm_with_structured_output(self, schema: dict | type):
+        llm = self.get_base_llm()
+        return llm.with_structured_output(schema)
 
-    builder.add_node("Scout", assistant)
-    builder.add_node(ToolNode(tools))
+class ToolAssistantNode:
+    def __init__(self, tools):
+        self.tools = tools
+        llm_factory = LLMFactory()
+        prompt_manager = PromptManager()
 
-    builder.add_edge(START, "Scout")
-    builder.add_conditional_edges(
-        "Scout",
-        tools_condition,
-    )
-    builder.add_edge("tools", "Scout")
+        self.llm = llm_factory.get_tool_llm(self.tools)
 
-    return builder.compile(checkpointer=MemorySaver())
+        tools_json = [
+            tool.model_dump_json(include=["name", "description"])
+            for tool in self.tools
+        ]
+        tools_context = "\n".join(tools_json)
+
+        system_prompt = prompt_manager.get(
+            "system_prompt",
+            tools=tools_context
+        )
+
+        self.system_message = SystemMessage(content=system_prompt)
+
+
+    def __call__(self, state):
+        response = self.llm.invoke(
+            [self.system_message] + state.messages
+        )
+
+        return {"messages": [response]}
+    
+class IntentClassifier(BaseModel):
+    """Structured output for intent classification"""
+    intent: Literal["tools", "default"] = Field(description="Next step in query processing")
+
+class IntentClassifierNode:
+    def __init__(self):
+        llm_factory = LLMFactory()
+        self.llm = llm_factory.get_llm_with_structured_output(IntentClassifier)
+
+    def __call__(self, state):
+        system_prompt = f"""
+        Your job is to choose EXACTLY ONE label:
+        - "tools"
+        - "default"
+
+        Follow these rules strictly, in order:
+
+        1. If the user asks about:
+        - study materials, documents, or files
+        - explanations of concepts (school, university topics)
+        - summarization, notes, exam preparation
+        - answering factual or knowledge-based questions
+        → return "tools"
+
+        2. If the user input is:
+        - vague or meta (e.g. "what can you do?")
+        - casual conversation (e.g. greetings, jokes)
+        - unrelated to studying or knowledge retrieval
+        → return "default"
+
+        3. If unsure → return "tools" (prefer tools over default)
+
+        User input:
+        {state.messages[-1].content}
+        """
+
+        self.system_message = SystemMessage(content = system_prompt)
+
+        response = self.llm.invoke(
+            [self.system_message]
+        )
+
+        # Dynamic routing based on intent
+        if response.intent == "tools":
+            next_node = "tools"
+        elif response.intent == "default":
+            next_node = "DefaultAssistant_Node"
+        else:
+            next_node = "DefaultAssistant_Node"
+
+        return Command(
+            update={
+                "next_node": next_node
+            },
+            goto=next_node,
+        )
+    
+class DefaultAssistantNode:
+    def __init__(self):
+        llm_factory = LLMFactory()
+        prompt_manager = PromptManager()
+
+        self.llm = llm_factory.get_base_llm()
+
+        system_prompt = prompt_manager.get("default_prompt")
+        self.system_message = SystemMessage(content=system_prompt)
+
+    def __call__(self, state):
+        response = self.llm.invoke(
+            [self.system_message] + state.messages
+        )
+
+        return {"messages": [response]}
+    
+class AgentWorkflow:
+    def __init__(self, tools: List[BaseTool] = []):
+        self.tools = tools
+        self.tool_assistant_node = ToolAssistantNode(tools)
+        self.classify_intent_node = IntentClassifierNode()
+        self.default_assistant_node = DefaultAssistantNode()
+        
+    async def _create_graph(self):
+        """Create and configure the state graph for handling queries"""
+        workflow = StateGraph(AgentState)
+
+        workflow.add_node("ToolAssistant_Node", self.tool_assistant_node)
+        workflow.add_node("tools", ToolNode(self.tools))
+        workflow.add_node("IntentClassifier_Node", self.classify_intent_node)
+        workflow.add_node("DefaultAssistant_Node", self.default_assistant_node)
+
+        workflow.add_edge(START, "IntentClassifier_Node")
+        workflow.add_conditional_edges(
+            "ToolAssistant_Node",
+            tools_condition,
+        )
+        workflow.add_edge("tools", "ToolAssistant_Node")
+        workflow.add_edge("DefaultAssistant_Node", END)
+
+        return workflow.compile(checkpointer=MemorySaver())
 
 if __name__ == "__main__":
-    graph = build_agent_graph()
+    graph = AgentWorkflow([])._create_graph()
