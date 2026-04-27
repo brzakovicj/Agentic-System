@@ -75,35 +75,12 @@ class IntentClassifier(BaseModel):
 class IntentClassifierNode:
     def __init__(self):
         llm_factory = LLMFactory()
+        self.prompt_manager = PromptManager()
         self.llm = llm_factory.get_llm_with_structured_output(IntentClassifier)
 
     def __call__(self, state):
-        system_prompt = f"""
-        Your job is to choose EXACTLY ONE label:
-        - "tools"
-        - "default"
 
-        Follow these rules strictly, in order:
-
-        1. If the user asks about:
-        - study materials, documents, or files
-        - explanations of concepts (school, university topics)
-        - summarization, notes, exam preparation
-        - answering factual or knowledge-based questions
-        → return "tools"
-
-        2. If the user input is:
-        - vague or meta (e.g. "what can you do?")
-        - casual conversation (e.g. greetings, jokes)
-        - unrelated to studying or knowledge retrieval
-        → return "default"
-
-        3. If unsure → return "tools" (prefer tools over default)
-
-        User input:
-        {state.messages[-1].content}
-        """
-
+        system_prompt = self.prompt_manager.get("intent_classifier_prompt", message = state.messages[-1].content)
         self.system_message = SystemMessage(content = system_prompt)
 
         response = self.llm.invoke(
