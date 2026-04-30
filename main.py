@@ -1,12 +1,15 @@
 import asyncio
 import sys
-from agents.client import client_main
-from agents.mcp_servers.rag_server.RAG import mcp
+from src.client import client_main
+from src.mcp_servers.rag_server.RAG import mcp
+from src.multi_agent.supervisor import main as supervisor_main
+#import nest_asyncio
 
 def main():
     if len(sys.argv) < 2:
         print("Defaulting to client mode. To specify mode, run with 'client' or 'rag_server' argument.")
-        asyncio.run(client_main())
+        #nest_asyncio.apply()
+        asyncio.run(supervisor_main())
         return
     
     mode = sys.argv[1]

@@ -12,7 +12,7 @@ from langgraph.types import Command
 
 import os
 
-from agents.prompts.prompt_manager import PromptManager
+from src.prompts.prompt_manager import PromptManager
 
 class AgentState(BaseModel):
     messages: Annotated[List, add_messages] = Field(default_factory=list)

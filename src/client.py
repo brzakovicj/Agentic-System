@@ -1,8 +1,8 @@
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.messages import HumanMessage, AIMessageChunk
 from typing import AsyncGenerator
-from agents.graph import AgentWorkflow, AgentState
-from agents.mcp_servers.config import mcp_config
+from src.graph import AgentWorkflow, AgentState
+from src.mcp_servers.config import mcp_config
 
 class MCPClient:
     def __init__(self, config: dict):

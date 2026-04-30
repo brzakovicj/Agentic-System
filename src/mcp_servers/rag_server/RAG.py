@@ -15,7 +15,7 @@ from fastmcp import FastMCP
 from fastmcp.prompts import Message
 
 # Prompt manager
-from agents.prompts.prompt_manager import PromptManager
+from src.prompts.prompt_manager import PromptManager
 
 # ChromaDB imports
 import chromadb
