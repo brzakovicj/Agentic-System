@@ -25,7 +25,7 @@ class LLMFactory:
     def get_base_llm(self):
         if self._llm is None:
             self._llm = ChatOllama(
-                model="llama3.2",
+                model="llama3.2:3b",
                 temperature=0,
             )
 
