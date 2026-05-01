@@ -6,13 +6,11 @@ import numpy as np
 import hashlib
 from pathlib import Path
 from typing import Dict, Any, List
-from textwrap import dedent
 from dotenv import load_dotenv
 from datetime import datetime
 
 # FastMCP imports
 from fastmcp import FastMCP
-from fastmcp.prompts import Message
 
 # Prompt manager
 from src.prompts.prompt_manager import PromptManager
@@ -49,12 +47,12 @@ hf_logging.set_verbosity_error()
 
 load_dotenv()
 
-# Initialize FastMCP server with RAG capabilities
-mcp = FastMCP("RAG Server")
+# Initialize FastMCP server with ChromaDB capabilities
+mcp = FastMCP("ChromaDB Server")
 
-class RAG_Server:
+class ChromaDB_Server:
     def __init__(self): # ok
-        """Initializes the RAG server, setting up the database connection."""
+        """Initializes the ChromaDB server, setting up the database connection."""
         self.chroma_client = None
         self.collection = None
 
@@ -77,18 +75,15 @@ class RAG_Server:
             
             os.makedirs(persist_directory, exist_ok=True)
             
-            self.chroma_client = chromadb.PersistentClient(
-                path=str(persist_directory),
-                settings=Settings(
-                    anonymized_telemetry=False,
-                    allow_reset=True
-                )
+            self.chroma_client = chromadb.HttpClient(
+                host=os.getenv("CHROMA_HOST", "localhost"),
+                port=int(os.getenv("CHROMA_PORT", 8000)),
             )
             
-            # Create fresh collection for RAG documents
+            # Create fresh collection for documents
             self.collection = self.chroma_client.get_or_create_collection(
                 name="study_materials",
-                metadata={"description": "Collection for RAG document storage"}
+                metadata={"description": "Collection for document storage"}
             )
             
             logger.info(f"ChromaDB initialized successfully. Vector database has {self.collection.count()} documents.")
@@ -108,16 +103,16 @@ class RAG_Server:
     def _get_database_directory(self): # ok
         """Get the ChromaDB persistent directory path with flexible resolution strategy."""
         # 1. Check environment variable first
-        env_db_dir = os.environ.get("RAG_DB_DIR", None)
+        env_db_dir = os.environ.get("DB_DIR", None)
         if env_db_dir:
             db_path = Path(env_db_dir).expanduser().resolve()
-            logger.info(f"Using database directory from RAG_DB_DIR: {db_path}")
+            logger.info(f"Using database directory from DB_DIR: {db_path}")
             return db_path
     
         # 2. No environment variable - raise error
         error_msg = (
             "No database directory found. Please either:\n"
-            "1. Set the RAG_DB_DIR environment variable to specify a database directory, or\n"
+            "1. Set the DB_DIR environment variable to specify a database directory, or\n"
             "2. Ensure a valid database directory is configured\n\n"
         )
         logger.error(error_msg)
@@ -126,16 +121,16 @@ class RAG_Server:
     def _get_data_directory(self): # ok
         """Get the data directory path with flexible resolution strategy."""
         # 1. Check environment variable first
-        env_data_dir = os.environ.get('RAG_DATA_DIR')
+        env_data_dir = os.environ.get('DATA_DIR')
         if env_data_dir:
             data_path = Path(env_data_dir).expanduser().resolve()
-            logger.info(f"Using data directory from RAG_DATA_DIR: {data_path}")
+            logger.info(f"Using data directory from DATA_DIR: {data_path}")
             return data_path
         
         # 2. No environment variable and no existing data directory - raise error
         error_msg = (
             "No data directory found. Please either:\n"
-            "1. Set the RAG_DATA_DIR environment variable to specify a data directory, or\n"
+            "1. Set the DATA_DIR environment variable to specify a data directory, or\n"
             "2. Create a 'data' directory in the current working directory\n\n"
         )
         logger.error(error_msg)
@@ -148,11 +143,11 @@ class RAG_Server:
             return True, f"Data directory configured: {data_path}"
         except ValueError:
             message = (
-                "No data directory is configured for this RAG system. "
+                "No data directory is configured for this ChromaDB system. "
                 "The system cannot access any documents without a data directory.\n\n"
                 "To set up a data directory, you can:\n"
-                "1. Set the RAG_DATA_DIR environment variable:\n"
-                "   export RAG_DATA_DIR=/path/to/your/documents\n"
+                "1. Set the DATA_DIR environment variable:\n"
+                "   export DATA_DIR=/path/to/your/documents\n"
                 "2. Create a 'data' directory in the current working directory:\n"
                 "   mkdir data\n\n"
                 "After setting up the data directory, add your documents to it and restart the server "
@@ -383,84 +378,6 @@ class RAG_Server:
     ###################################################################################################################
     #################################################### MCP TOOLS ####################################################
     ###################################################################################################################
-    
-    async def _query_documents(self, query: str, n_results: int = 5, include_metadata: bool = True, top_n: int = 3) -> str: # Ogranicenje za top_n?        
-        try:
-            ################ RETRIEVE ################
-
-            is_configured, config_message = self._check_data_directory_configured()
-            if not is_configured:
-                return config_message
-            
-            if not query.strip():
-                return "Error: Query cannot be empty."
-            
-            if n_results <= 0:
-                n_results = 5
-            elif n_results > 20:
-                n_results = 20
-            
-            top_n = min(top_n, n_results)
-
-            if top_n <= 0:
-                top_n = n_results
-
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=n_results,
-                include=["documents", "metadatas", "distances"]
-            )
-            
-            if not results["documents"] or not results["documents"][0]:
-                return "No relevant documents found for your query."
-            
-            ################ RERANK ################
-
-            documents = results["documents"][0]
-            metadatas = results["metadatas"][0] if results["metadatas"] else [{}] * len(documents)
-            distances = results["distances"][0] if results["distances"] else [0] * len(documents)
-
-            # Rerank
-            pairs = [(query, doc) for doc in documents]
-            scores = self.cross_encoder.predict(pairs)
-
-            # Sort by score descending
-            top_indices = np.argsort(scores)[-top_n:][::-1]
-
-            # Apply same ordering to everything
-            documents = [documents[i] for i in top_indices]
-            metadatas = [metadatas[i] for i in top_indices]
-            distances = [distances[i] for i in top_indices]
-            scores = [scores[i] for i in top_indices]
-
-            ################ FORMAT ################
-
-            formatted_results = []
-            
-            for i, (doc, metadata, distance, score) in enumerate(zip(documents, metadatas, distances, scores)):
-                result_text = f"\n--- Result {i+1} ---\n"
-                result_text += f"Content: {doc}\n"
-                
-                if include_metadata and metadata:
-                    result_text += f"File Name: {metadata.get('file_name', 'Unknown')}\n"
-                    result_text += f"Source: {metadata.get('file_path', 'Unknown')}\n"
-                    result_text += f"Page Number: {metadata.get('page_number', 'Unknown')}\n"
-                    #result_text += f"Chunk: {metadata.get('chunk_index', 'Unknown')} of {metadata.get('total_chunks', 'Unknown')}\n"
-                    result_text += f"Similarity Score: {1 - distance:.3f}\n" # Sta ce nam ovo?
-                    result_text += f"Relevance Score: {score:.3f}\n" # Sta ce nam ovo?
-                
-                formatted_results.append(result_text)
-            
-            response = f"Found {len(documents)} relevant documents for query: '{query}'\n"
-            response += "\n".join(formatted_results)
-            
-            logger.info(f"Query '{query}' returned {len(documents)} results")
-            return response
-            
-        except Exception as e:
-            error_msg = f"Error querying documents: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
 
     # OK treba verovatno izmeniti metadata koje se izlistavaju i generalno koje se cuvaju u vectorstore
     async def _list_ingested_files(self) -> str:
@@ -552,7 +469,7 @@ class RAG_Server:
             return error_msg
 
     # Ok ne treba nam bas, ali neka
-    async def _get_rag_status(self) -> Dict[str, Any]:
+    async def _get_server_status(self) -> Dict[str, Any]:
         try:
             doc_count = self.collection.count() if self.collection else 0
             
@@ -565,7 +482,7 @@ class RAG_Server:
                     "path": str(data_directory),
                     "exists": data_directory.exists(),
                     "configured": True,
-                    "source": "environment" if os.getenv('RAG_DATA_DIR') else "workspace"
+                    "source": "environment" if os.getenv('DATA_DIR') else "workspace"
                 }
             except ValueError as e:
                 data_directory_status = {
@@ -577,13 +494,13 @@ class RAG_Server:
                 }
             
             env_vars = {
-                "RAG_DATA_DIR": {
-                    "set": bool(os.getenv('RAG_DATA_DIR')),
-                    "value": os.getenv('RAG_DATA_DIR')
+                "DATA_DIR": {
+                    "set": bool(os.getenv('DATA_DIR')),
+                    "value": os.getenv('DATA_DIR')
                 },
-                "RAG_DB_DIR": {
-                    "set": bool(os.getenv('RAG_DB_DIR')),
-                    "value": os.getenv('RAG_DB_DIR')
+                "DB_DIR": {
+                    "set": bool(os.getenv('DB_DIR')),
+                    "value": os.getenv('DB_DIR')
                 }
             }
             
@@ -592,7 +509,7 @@ class RAG_Server:
                 "directory": str(db_directory),
                 "exists": db_directory.exists(),
                 "collection_name": "study_materials",
-                "source": "environment" if os.getenv('RAG_DB_DIR') else "standard"
+                "source": "environment" if os.getenv('DB_DIR') else "standard"
             }
             
             system_status = {
@@ -611,11 +528,11 @@ class RAG_Server:
                 "environment_variables": env_vars,
                 "configuration": {
                     "data_dir_priority": [
-                        "RAG_DATA_DIR environment variable",
+                        "DATA_DIR environment variable",
                         "Error if not found"
                     ],
                     "db_dir_priority": [
-                        "RAG_DB_DIR environment variable",
+                        "DB_DIR environment variable",
                         "./chromadb in current working directory"
                     ]
                 }
@@ -657,7 +574,7 @@ class RAG_Server:
             # 2. Recreate collection
             self.collection = self.chroma_client.get_or_create_collection(
                 name=collection_name,
-                metadata={"description": "Collection for RAG document storage"}
+                metadata={"description": "Collection for document storage"}
             )
 
             logger.info("Created fresh collection.")
@@ -690,32 +607,7 @@ class RAG_Server:
         except Exception as e:
             return f"Error deleting files: {str(e)}"
         
-    #####################################################################################################################
-    #################################################### MCP PROMPTS ####################################################
-    #####################################################################################################################
-
-    async def _rag_analysis_prompt(self, topic: str) -> Message:
-        text = self.prompt_manager.get("rag_analysis_prompt", topic=topic)
-        return Message(role="user", content=text)
-        
-rag = RAG_Server()
-
-@mcp.tool()
-async def query_documents(query: str) -> str:
-    """
-    Search the knowledge base.
-
-    Input:
-    - query: string
-
-    IMPORTANT:
-    - Always pass a plain string
-    - Do NOT wrap it in an object
-    """
-    n_results = 5
-    include_metadata = True
-    top_n = 3
-    return await rag._query_documents(query=query, n_results=n_results, include_metadata=include_metadata, top_n=top_n)
+server = ChromaDB_Server()
 
 @mcp.tool()
 async def list_ingested_files(dummy: str = "") -> str:
@@ -738,7 +630,7 @@ async def list_ingested_files(dummy: str = "") -> str:
         Call this tool when the user wants to see which documents
         are available in the knowledge base.
     """
-    return await rag._list_ingested_files()
+    return await server._list_ingested_files()
 
 @mcp.tool()
 async def ingest_new_documents(dummy: str = "") -> str:
@@ -761,12 +653,12 @@ async def ingest_new_documents(dummy: str = "") -> str:
     Usage:
         Call this tool when the user wants to add new documents to the system.
     """
-    return await rag._ingest_new_documents()
+    return await server._ingest_new_documents()
 
 @mcp.tool()
-async def get_rag_status(dummy: str = "") -> Dict[str, Any]:
+async def get_server_status(dummy: str = "") -> Dict[str, Any]:
     """
-    Get the current status and configuration of the RAG system.
+    Get the current status and configuration of the system.
 
     This tool returns diagnostic information about:
     - system state
@@ -782,13 +674,13 @@ async def get_rag_status(dummy: str = "") -> Dict[str, Any]:
                      Do not provide any value for this argument.
 
     Returns:
-        Dict[str, Any]: A structured object containing the current RAG system status.
+        Dict[str, Any]: A structured object containing the current ChromaDB system status.
 
     Usage:
         Call this tool when the user asks about system status, configuration,
         indexing state, or debugging information.
     """
-    return await rag._get_rag_status()
+    return await server._get_server_status()
 
 @mcp.tool()
 async def reingest_data_directory(dummy: str = "") -> str:
@@ -812,7 +704,7 @@ async def reingest_data_directory(dummy: str = "") -> str:
         Call this tool when the user wants to fully rebuild the knowledge base
         or fix inconsistent/corrupted data.
     """
-    return await rag._reingest_data_directory()
+    return await server._reingest_data_directory()
 
 @mcp.tool()
 async def delete_files_from_db(file_names: List[str]) -> str:
@@ -837,42 +729,12 @@ async def delete_files_from_db(file_names: List[str]) -> str:
             "file_names": ["file1.pdf", "notes.txt"]
         }
     """
-    return await rag._delete_files_from_db(file_names=file_names)
+    return await server._delete_files_from_db(file_names=file_names)
 
-@mcp.prompt()
-async def rag_analysis_prompt(topic: str) -> Message:
-    """
-    Generate a structured research prompt for analyzing a topic using the RAG system.
-
-    This tool creates a prompt that guides the AI to:
-    - retrieve relevant documents
-    - extract key information
-    - summarize findings
-    - identify insights and relationships
-    - suggest further exploration
-
-    It does NOT perform retrieval or analysis directly.
-
-    Arguments:
-        topic (str): The topic to analyze.
-
-    Returns:
-        Message: A formatted prompt for downstream LLM analysis.
-
-    Usage:
-        Call this tool when the user wants to perform deep analysis
-        or research on a specific topic.
-
-        Example:
-        {
-            "topic": "neural networks"
-        }
-    """
-    return await rag._rag_analysis_prompt(topic=topic)
 
 if __name__ == "__main__":
     try:
-        logger.info("Starting RAG MCP Server...")
+        logger.info("Starting ChromaDB MCP Server...")
         mcp.run(transport="stdio")
     except Exception as e:
         logger.exception("SERVER CRASHED")

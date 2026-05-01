@@ -1,7 +1,7 @@
 import asyncio
 import sys
 from src.client import client_main
-from src.mcp_servers.rag_server.RAG import mcp
+from src.mcp_servers.rag_server.server import mcp
 from src.ui.console import main as multi_agent_main
 #import nest_asyncio
 

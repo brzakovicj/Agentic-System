@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from src.multi_agent.supervisor.state import SupervisorState
-from src.multi_agent.supervisor.graph import graph
+from src.multi_agent.supervisor.graph import SupervisorAgent
 
 def get_responsive_width(console: Console) -> int:
     """Get responsive width with margins for panels."""
@@ -172,6 +172,9 @@ async def main():
         )
         console.print(welcome_panel)
         console.print()  # Add spacing after welcome
+
+        supervisor = SupervisorAgent()
+        graph = await supervisor.build_graph()
 
         while True:
             console.print()

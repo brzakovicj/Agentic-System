@@ -5,7 +5,7 @@
             "command": "python",
             "args": [
                 "-m", 
-                "agents.mcp_servers.rag_server.RAG"
+                "src.mcp_servers.rag_server.RAG"
             ]
         },
         "duckduckgo": {
