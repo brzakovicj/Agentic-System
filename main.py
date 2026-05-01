@@ -2,14 +2,14 @@ import asyncio
 import sys
 from src.client import client_main
 from src.mcp_servers.rag_server.RAG import mcp
-from src.multi_agent.supervisor import main as supervisor_main
+from src.ui.console import main as multi_agent_main
 #import nest_asyncio
 
 def main():
     if len(sys.argv) < 2:
-        print("Defaulting to client mode. To specify mode, run with 'client' or 'rag_server' argument.")
+        print("Defaulting to client mode. To specify mode, run with ['client', 'rag_server' or 'supervisor'] argument.")
         #nest_asyncio.apply()
-        asyncio.run(supervisor_main())
+        asyncio.run(multi_agent_main())
         return
     
     mode = sys.argv[1]
@@ -19,6 +19,10 @@ def main():
 
     elif mode == "rag_server":
         mcp.run(transport="stdio")
+
+    elif mode == "supervisor":
+        #nest_asyncio.apply()
+        asyncio.run(multi_agent_main())
 
     else:
         print(f"Unknown mode: {mode}")
