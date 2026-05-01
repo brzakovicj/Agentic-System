@@ -13,6 +13,8 @@ from src.multi_agent.researcher.tools import extract_content_from_webpage, gener
 import os
 import json
 
+from src.prompts.prompt_manager import PromptManager
+
 load_dotenv()
 
 class ResearcherAgent:
@@ -20,7 +22,8 @@ class ResearcherAgent:
         self.graph = None
         self.llm = None
         self.tools = None
-        self.researcher_prompt = open("src/prompts/researcher.md", "r").read()
+        self.prompt_manager = PromptManager()
+        self.researcher_prompt = None
         
         base_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(
@@ -36,6 +39,13 @@ class ResearcherAgent:
         # MCP tools
         self.mcp_client = MCPClient(self.mcp_config)
         mcp_tools = await self.mcp_client.get_tools()
+        
+        tools_context = "\n".join(
+            f"{tool.name}: {tool.description}"
+            for tool in mcp_tools
+        )
+
+        self.researcher_prompt = self.prompt_manager.get("researcher", tools = tools_context, current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
         # Kombinuj sve alate
         self.tools = [
@@ -84,9 +94,7 @@ class ResearcherAgent:
         """The main researcher agent."""
         response = self.llm_with_tools.invoke([
             SystemMessage(
-                content=self.researcher_prompt.format(
-                    current_datetime=datetime.now()
-                )
+                content=self.researcher_prompt
             )
         ] + state.messages)
         

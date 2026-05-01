@@ -9,9 +9,6 @@ class MCPClient:
         try:
             tools = await self.client.get_tools()
 
-            for t in tools:
-                print(t.name, t.description)
-
             return tools
         except Exception as e:
             raise RuntimeError(f"Failed to fetch tools from MCP servers: {e}")

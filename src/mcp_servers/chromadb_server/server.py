@@ -69,12 +69,7 @@ class ChromaDB_Server:
 
     def _initialize_chromadb(self): # ok
         """Initialize ChromaDB client and collection, then auto-ingest files from data directory"""
-        try:
-            # Get database directory using flexible resolution
-            persist_directory = self._get_database_directory()
-            
-            os.makedirs(persist_directory, exist_ok=True)
-            
+        try:            
             self.chroma_client = chromadb.HttpClient(
                 host=os.getenv("CHROMA_HOST", "localhost"),
                 port=int(os.getenv("CHROMA_PORT", 8000)),
@@ -100,23 +95,23 @@ class ChromaDB_Server:
             logger.error(error_msg)
             return error_msg
     
-    def _get_database_directory(self): # ok
-        """Get the ChromaDB persistent directory path with flexible resolution strategy."""
-        # 1. Check environment variable first
-        env_db_dir = os.environ.get("DB_DIR", None)
-        if env_db_dir:
-            db_path = Path(env_db_dir).expanduser().resolve()
-            logger.info(f"Using database directory from DB_DIR: {db_path}")
-            return db_path
+    # def _get_database_directory(self): # ok
+    #     """Get the ChromaDB persistent directory path with flexible resolution strategy."""
+    #     # 1. Check environment variable first
+    #     env_db_dir = os.environ.get("DB_DIR", None)
+    #     if env_db_dir:
+    #         db_path = Path(env_db_dir).expanduser().resolve()
+    #         logger.info(f"Using database directory from DB_DIR: {db_path}")
+    #         return db_path
     
-        # 2. No environment variable - raise error
-        error_msg = (
-            "No database directory found. Please either:\n"
-            "1. Set the DB_DIR environment variable to specify a database directory, or\n"
-            "2. Ensure a valid database directory is configured\n\n"
-        )
-        logger.error(error_msg)
-        raise ValueError(error_msg)
+    #     # 2. No environment variable - raise error
+    #     error_msg = (
+    #         "No database directory found. Please either:\n"
+    #         "1. Set the DB_DIR environment variable to specify a database directory, or\n"
+    #         "2. Ensure a valid database directory is configured\n\n"
+    #     )
+    #     logger.error(error_msg)
+    #     raise ValueError(error_msg)
 
     def _get_data_directory(self): # ok
         """Get the data directory path with flexible resolution strategy."""
@@ -473,7 +468,7 @@ class ChromaDB_Server:
         try:
             doc_count = self.collection.count() if self.collection else 0
             
-            db_directory = self._get_database_directory()
+            db_directory = "JAPAJAPAJA"
             
             data_directory_status = {}
             try:
