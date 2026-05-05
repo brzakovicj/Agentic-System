@@ -5,30 +5,32 @@ from langgraph.checkpoint.memory import MemorySaver
 from datetime import datetime
 from dotenv import load_dotenv
 from langgraph.types import RunnableConfig
-from langchain_ollama.chat_models import ChatOllama
 from src.multi_agent.copywriter.graph import CopywriterAgent
 from src.multi_agent.researcher.graph import ResearcherAgent
 from src.multi_agent.supervisor.state import SupervisorState
 from src.multi_agent.supervisor.tools import handoff_to_subagent
+from src.utils.llm_factory import LLMFactory, ModelTier
 
 load_dotenv()
 
 class SupervisorAgent:
     def __init__(self):
         self.graph = None
-        self.llm = None
         self.tools = None
         self.supervisor_prompt = open("src/prompts/supervisor.md", "r").read()
 
         self.tools = [handoff_to_subagent]
 
-        # LLM
-        self.llm = ChatOllama(
-            model="llama3.2:3b",
-            temperature=0,
-        )
+        # # LLM
+        # self.llm = ChatOllama(
+        #     model="llama3.2:3b",
+        #     temperature=0,
+        # )
 
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
+        # self.llm_with_tools = self.llm.bind_tools(self.tools)
+
+        factory = LLMFactory.get_instance()
+        self.llm_with_tools = factory.get_tool_llm(ModelTier.REMOTE, self.tools)
 
         self.research_agent = ResearcherAgent()
         self.copywriter_agent = CopywriterAgent()

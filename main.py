@@ -3,6 +3,7 @@ import sys
 from src.client import client_main
 from src.mcp_servers.chromadb_server.server import mcp
 from src.ui.console import main as multi_agent_main
+from src.utils.llm_factory import LLMFactory
 #import nest_asyncio
 
 def main():
@@ -11,6 +12,8 @@ def main():
         #nest_asyncio.apply()
         asyncio.run(multi_agent_main())
         return
+    
+    LLMFactory.initialize()
     
     mode = sys.argv[1]
 
