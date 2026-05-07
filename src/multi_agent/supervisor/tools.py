@@ -4,15 +4,15 @@ from langchain_core.tools import tool, InjectedToolCallId
 from langgraph.types import Command
 
 @tool
-async def handoff_to_subagent(
-    agent_name: Literal["researcher", "copywriter"],
+def handoff_to_subagent(
+    agent_name: Literal["notes_generator"],
     task_description: str,
     tool_call_id: Annotated[str, InjectedToolCallId],
     ):
-    """Assign a task to a sub-agent: researcher or copywriter.
+    """Assign a task to a sub-agent: notes_generator.
     
     Args:
-        agent_name: The name of the agent to handoff the task to. Valid agent names are researcher and copywriter.
+        agent_name: The name of the agent to handoff the task to. Valid agent names are: notes_generator.
         task_description: The description of the task to be completed.
     """
     # Construct the update schema for the Command primitive
@@ -20,7 +20,7 @@ async def handoff_to_subagent(
     update = {
         "task_description": task_description,
         "messages": [ToolMessage(
-            name=f"handoff_to_{agent_name}",
+            name=f"handoff_to_subagent",
             content=f"Successfully handed off task to {agent_name}.",
             tool_call_id=tool_call_id,
         )],
