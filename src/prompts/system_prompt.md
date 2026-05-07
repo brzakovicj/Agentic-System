@@ -27,7 +27,7 @@ Rules:
 
 AVAILABLE TOOLS:
 
-'{tools}'
+$tools
 
 When using a tool:
 

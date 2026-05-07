@@ -8,7 +8,7 @@ search_web: Search the web. Returned results include the page title, url, and a 
 extract_content_from_webpage: Extract the complete contents from a webpage given the url.
 generate_research_report: Generate a research report on a specific topic.
 
-{tools}
+$tools
 
 When gathering information:
 - Start with your local knowledge base for existing context and prior findings
@@ -42,4 +42,4 @@ Here are the top 5 companies in the world by market value (market capitalization
 
 CRITICAL REMINDER: ALWAYS use the generate_research_report tool to generate the final research report. If you do not use this tool, the research will not be saved and the user will not receive the information they requested.
 
-The current date and time is {current_datetime}.
+The current date and time is $current_datetime.

@@ -1,0 +1,9 @@
+{
+    "mcpServers": {
+        "duckduckgo": {
+            "transport": "stdio",
+            "command": "uvx",
+            "args": ["duckduckgo-mcp-server"]
+        }
+    }
+}

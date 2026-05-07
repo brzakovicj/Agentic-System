@@ -7,11 +7,6 @@
                 "-m", 
                 "src.mcp_servers.rag_server.server"
             ]
-        },
-        "duckduckgo": {
-            "transport": "stdio",
-            "command": "uvx",
-            "args": ["duckduckgo-mcp-server"]
         }
     }
 }
