@@ -153,6 +153,9 @@ class ResearcherAgent:
             If the retrieval is successful and returns relevant documents, the node will 
             return those documents in the state.
         """
+
+
+
         # LLM
         llm = self.factory.get_tool_llm(tier=ModelTier.REMOTE, tools=self._mcp_tools_retriever_node)
         
@@ -168,12 +171,25 @@ class ResearcherAgent:
             SystemMessage(content=research_retriever_prompt)
         ]
 
+        print("\n--- RETRIEVER STATE ---")
+        for m in state.messages:
+            print(type(m).__name__, getattr(m, "content", ""))
+            if hasattr(m, "tool_calls"):
+                print("TOOL CALLS:", m.tool_calls)
+        print("-----------------------\n")
+
         try:
-            response = await llm.ainvoke(state.messages + messages)
+            response = await llm.ainvoke(messages + state.messages)
         except Exception as e:
             return {
                 "error": f"LLM call failed: {e}"
             }
+        
+        print(type(response).__name__, getattr(response, "content", ""))
+        if hasattr(response, "tool_calls"):
+            print("TOOL CALLS:", response.tool_calls)
+
+        print("-----------------------\n")
         
         return {
             "messages": [response],
@@ -214,6 +230,12 @@ class ResearcherAgent:
  
         try:
             decision: EvaluatorDecision = await llm.ainvoke(messages)
+
+            print("---------- EVALUATOR-------------\n")
+            print(type(decision).__name__, getattr(decision, "need_web_search", ""))
+            print(type(decision).__name__, getattr(decision, "reason", ""))
+            print("-----------------------\n")
+
             return {
                 "need_web_search": decision.need_web_search
             }
@@ -240,6 +262,7 @@ class ResearcherAgent:
 
         web_prompt = self._prompt_manager.get(
             "research_web_searcher_prompt",
+            query=state.query,
             tools=tools_context,
             current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
@@ -248,14 +271,27 @@ class ResearcherAgent:
         messages = [
             SystemMessage(content=web_prompt)
         ]
+
+        print("\n--- WEB SEARCHER STATE ---")
+        for m in state.messages:
+            print(type(m).__name__, getattr(m, "content", ""))
+            if hasattr(m, "tool_calls"):
+                print("TOOL CALLS:", m.tool_calls)
+        print("-----------------------\n")
  
         try:
-            response = await llm.ainvoke(state.messages + messages)
+            response = await llm.ainvoke(messages + state.messages)
         except Exception as exc:
             return {
                 "error": str(exc)
             }
         
+        print(type(response).__name__, getattr(response, "content", ""))
+        if hasattr(response, "tool_calls"):
+            print("TOOL CALLS:", response.tool_calls)
+
+        print("-----------------------\n")
+
         return {
             "messages": [response],
             "web_results": [response.content] if not response.tool_calls else []
