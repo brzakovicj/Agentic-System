@@ -77,7 +77,12 @@ class SupervisorAgent:
 
     async def supervisor_router(self, state: SupervisorState) -> str:
         """Route to the tools node if the supervisor makes a tool call."""
-        if state.messages[-1].tool_calls:
+        last_message = state.messages[-1]
+
+        if isinstance(last_message, AIMessage) and last_message.name == "researcher":
+            return END
+
+        if last_message.tool_calls:
             return "tools"
         return END
     
@@ -99,7 +104,10 @@ class SupervisorAgent:
         if hasattr(research_response["messages"][-1], "tool_calls"):
             print("TOOL CALLS:", research_response["messages"][-1].tool_calls)
 
-        ai_message = AIMessage(name="researcher", content=research_response['messages'][-1].content)
+        ai_message = AIMessage(
+            name="researcher", 
+            content=research_response['messages'][-1].content
+        )
 
         return {
             "messages": [ai_message],
