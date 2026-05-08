@@ -153,9 +153,6 @@ class ResearcherAgent:
             If the retrieval is successful and returns relevant documents, the node will 
             return those documents in the state.
         """
-
-
-
         # LLM
         llm = self.factory.get_tool_llm(tier=ModelTier.REMOTE, tools=self._mcp_tools_retriever_node)
         
@@ -171,13 +168,6 @@ class ResearcherAgent:
             SystemMessage(content=research_retriever_prompt)
         ]
 
-        print("\n--- RETRIEVER STATE ---")
-        for m in state.messages:
-            print(type(m).__name__, getattr(m, "content", ""))
-            if hasattr(m, "tool_calls"):
-                print("TOOL CALLS:", m.tool_calls)
-        print("-----------------------\n")
-
         try:
             response = await llm.ainvoke(messages + state.messages)
         except Exception as e:
@@ -185,11 +175,12 @@ class ResearcherAgent:
                 "error": f"LLM call failed: {e}"
             }
         
+        print("\n--- RETRIEVER STATE ---\n")
         print(type(response).__name__, getattr(response, "content", ""))
         if hasattr(response, "tool_calls"):
             print("TOOL CALLS:", response.tool_calls)
 
-        print("-----------------------\n")
+        print("\n-----------------------\n")
         
         return {
             "messages": [response],
@@ -231,10 +222,10 @@ class ResearcherAgent:
         try:
             decision: EvaluatorDecision = await llm.ainvoke(messages)
 
-            print("---------- EVALUATOR-------------\n")
+            print("\n---------- EVALUATOR-------------\n")
             print(type(decision).__name__, getattr(decision, "need_web_search", ""))
             print(type(decision).__name__, getattr(decision, "reason", ""))
-            print("-----------------------\n")
+            print("\n-----------------------\n")
 
             return {
                 "need_web_search": decision.need_web_search
@@ -271,13 +262,6 @@ class ResearcherAgent:
         messages = [
             SystemMessage(content=web_prompt)
         ]
-
-        print("\n--- WEB SEARCHER STATE ---")
-        for m in state.messages:
-            print(type(m).__name__, getattr(m, "content", ""))
-            if hasattr(m, "tool_calls"):
-                print("TOOL CALLS:", m.tool_calls)
-        print("-----------------------\n")
  
         try:
             response = await llm.ainvoke(messages + state.messages)
@@ -286,11 +270,12 @@ class ResearcherAgent:
                 "error": str(exc)
             }
         
+        print("\n--- WEB SEARCHER STATE ---\n")
         print(type(response).__name__, getattr(response, "content", ""))
         if hasattr(response, "tool_calls"):
             print("TOOL CALLS:", response.tool_calls)
 
-        print("-----------------------\n")
+        print("\n-----------------------\n")
 
         return {
             "messages": [response],
@@ -306,6 +291,9 @@ class ResearcherAgent:
             The synthesizer should also be able to handle cases where the retrieved information is insufficient and 
             explicitly state that in the final answer if that's the case.
         """
+        # LLM
+        llm = self.factory.get_base_llm()
+        
         retrieved_sources = state.retrieved_docs or []
         web_sources = state.web_results or []
 
@@ -313,9 +301,6 @@ class ResearcherAgent:
             f"{self._stringify_content(source)}"
             for source in retrieved_sources + web_sources
         )
-
-        # LLM
-        llm = self.factory.get_base_llm()
         
         prompt = self._prompt_manager.get(
             "research_synthesizer_prompt",
@@ -334,7 +319,14 @@ class ResearcherAgent:
                 "error": str(exc),
                 "final_answer": "I'm sorry, I was not able to synthesize the research findings due to an error."
             }
- 
+
+        print("\n--- SYNTHESIZER STATE ---\n")
+        print(type(response).__name__, getattr(response, "content", ""))
+        if hasattr(response, "tool_calls"):
+            print("TOOL CALLS:", response.tool_calls)
+
+        print("\n-----------------------\n")
+
         return {
             "final_answer": response.content,
             "messages": [response]
