@@ -166,5 +166,5 @@ class LLMFactory:
         elif tier == ModelTier.REMOTE:
             llm = self._build_remote()
 
-        return llm.with_structured_output(schema=schema)
+        return llm.with_structured_output(schema=schema, method="json_mode")
     
