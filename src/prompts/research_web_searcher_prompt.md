@@ -26,7 +26,7 @@ Before searching, rewrite the query for maximum search engine effectiveness:
 
 ## Search Strategy
 
-Issue at most 3 focused searches, each targeting a distinct facet of the topic:
+Perform one high-quality retrieval unless absolutely necessary:
 
 1. **Core concept** — definitions, background, key principles
 2. **Detail & context** — supporting evidence, examples, processes, data
@@ -37,11 +37,6 @@ full page content before deciding whether to include it.
 
 If a search conclusively returns no relevant material, do not rephrase it indefinitely —
 accept the gap and move on.
-
-## Stopping Condition
-
-Stop searching when you have gathered substantive content from at least 3 high-quality
-sources, or when further searching is clearly not producing new information.
 
 ## Source Priorities
 

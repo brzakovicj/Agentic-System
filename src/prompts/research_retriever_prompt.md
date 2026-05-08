@@ -25,7 +25,7 @@ Before retrieving, rewrite the query for semantic search:
 
 ## Retrieval Strategy
 
-Issue at most 3 focused queries, each targeting a distinct facet of the topic:
+Perform one high-quality retrieval unless absolutely necessary:
 
 1. **Core concept** — definitions, background, key principles
 2. **Detail & context** — supporting evidence, examples, processes, data
@@ -33,11 +33,6 @@ Issue at most 3 focused queries, each targeting a distinct facet of the topic:
 
 If a query conclusively returns no relevant material, do not rephrase it indefinitely —
 accept the gap and move on.
-
-## Stopping Condition
-
-Stop querying when you have gathered substantive chunks from at least 3 high-quality
-sources, or when further querying is clearly not producing new information.
 
 ## Retrieval Priorities
 
