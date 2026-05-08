@@ -63,15 +63,16 @@ class SupervisorAgent:
     async def supervisor(self, state: SupervisorState):
         """The main supervisor agent."""
 
-        print("\n--- SUPERVISOR STATE MESSAGES ---")
-        for msg in state.messages:
-            print(msg)
-        print("--------------------------------\n")
-
         # Build messages
         messages = [SystemMessage(content = self.supervisor_prompt)]
 
-        response = self.llm_with_tools.invoke(messages + state.messages)
+        response = await self.llm_with_tools.ainvoke(messages + state.messages)
+
+        print("\n--- SUPERVISOR STATE ---")
+        print(type(response).__name__, getattr(response, "content", ""))
+        if hasattr(response, "tool_calls"):
+            print("TOOL CALLS:", response.tool_calls)
+
         return {"messages": [response]}
 
     async def supervisor_router(self, state: SupervisorState) -> str:
@@ -93,11 +94,15 @@ class SupervisorAgent:
             config=config,
         )
 
-        ai_message = AIMessage(name="researcher", content=research_response["messages"][-1].content)
+        print("\n--- RESEARCHER STATE ---\n")
+        print(type(research_response).__name__, getattr(research_response["messages"][-1], "content", ""))
+        if hasattr(research_response["messages"][-1], "tool_calls"):
+            print("TOOL CALLS:", research_response["messages"][-1].tool_calls)
+
+        ai_message = AIMessage(name="researcher", content=research_response['messages'][-1].content)
 
         return {
             "messages": [ai_message],
-            "researcher_answer": research_response["final_answer"],
         }
 
 # Visualize the graph
