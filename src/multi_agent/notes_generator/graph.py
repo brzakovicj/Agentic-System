@@ -127,41 +127,34 @@ class NotesGeneratorAgent:
         ## Research Strategy
         Follow this order strictly:
 
-        1. **Internal knowledge base first** — always begin by exhaustively querying the internal
-        knowledge base. It contains proprietary information unavailable anywhere else.
-        Issue multiple focused queries covering different facets of the topic — definitions,
-        theory, examples, applications, edge cases, comparisons. Do not move on until you are
-        confident you have extracted everything relevant from it.
+        1. **Internal knowledge base first** — begin by querying the internal knowledge base.
+        Issue at most 3 focused queries covering different facets of the topic. If the knowledge
+        base does not contain relevant material, accept that conclusion and move on — do not
+        rephrase the same query indefinitely.
 
-        2. **Web resources to fill gaps** — only after exhausting the internal knowledge base,
-        use web resources to supplement areas that were insufficiently covered. Do not use
-        web sources to duplicate what the internal knowledge base already contains.
+        2. **Web resources to fill gaps** — after the internal knowledge base is exhausted or
+        conclusively unhelpful, use web resources to find and retrieve detailed information
+        on the topic. Retrieve the full content of promising sources, not just surface-level
+        summaries.
+
+        ## Stopping Condition
+        You have done enough research when you have gathered substantive information from
+        at least 3 high-quality sources, or when further querying is clearly not producing
+        new information. At that point, stop and write the report immediately.
 
         ## Source Discipline
-        - Every claim in your final report must be traceable to a specific source.
-        - For internal knowledge base results: cite the file name, page number, and relevance score.
-        - For web results: cite the URL and publication date where available.
-        - If a result appears low quality or irrelevant, discard it — do not include it just to
-        pad coverage.
-
-        ## Handling Poor Results
-        - If a query returns weak results, rephrase and try again before concluding
-        the information does not exist.
-        - Never repeat an identical query.
-        - Note any topic aspects that could not be covered by either source — the downstream
-        planner needs to know what is missing.
+        - Every claim must be traceable to a specific source.
+        - Internal sources: cite file name, page number, and relevance score.
+        - Web sources: cite the URL and publication date where available.
+        - Discard irrelevant results — do not include them to pad coverage.
 
         ## Output (after ALL querying is complete)
-        Produce a single dense research dump in Markdown. Do not impose any thematic structure —
-        the outline planner downstream will handle organization. Instead, focus on:
-
-        - **Completeness** — include everything relevant you found, don't filter aggressively.
-        - **Citations on every claim** — internal sources: file name + page number + relevance score.
-        Web sources: URL + publication date. Uncited claims will be discarded by downstream agents.
-        - **Gaps** — end with a short list of aspects that could not be sourced from either
-        the knowledge base or the web, so the planner knows what coverage is missing.
-
-        Do not write the report until all querying is complete.
+        Produce a single dense research dump in Markdown. Do not impose thematic structure —
+        the outline planner downstream will handle organization. Focus on:
+        - **Completeness** — include everything relevant you found.
+        - **Citations on every claim**.
+        - **Gaps** — end with a short list of aspects that could not be sourced, so the
+        planner knows what coverage is missing.
         """
 
         print("\n\n--- CURRENT MESSAGES ---\n\n")
@@ -283,15 +276,29 @@ class NotesGeneratorAgent:
         Instructions:
         - Write only what is scoped to this section's brief. The planner has already decided
         what belongs here — do not expand into other sections' territory.
-        - Draw exclusively from the research material. Do not use general knowledge.
-        - Every claim must include a citation: internal sources as (file name, p. X),
-        web sources as (URL).
-        - Use Markdown: headings, bullet points, bold for key terms.
         - Do not repeat content from previous sections.
         - Assume previous sections already fully explained their topics.
         - If a concept was already covered earlier, reference it briefly instead of redefining it.
         - Avoid repeating definitions, examples, or comparisons unless absolutely necessary.
         - Each section should introduce NEW information only.
+        - Draw exclusively from the research material. Do not use general knowledge.
+        - Every claim must include a citation: internal sources as (file name, p. X),
+        web sources as (URL).
+
+        Formatting rules:
+        - USE MARKDOWN SYNTAX.
+        - Use VALID Markdown tables.
+        - Keep paragraphs concise (2–5 sentences max).
+        - Prefer bullet points over dense prose.
+        - Do not repeat concepts already covered in previous sections.
+        - Use ## for section headings and ### for subsections.
+        - Use Markdown code blocks for code/examples.
+        - Never fake tables using spacing.
+        - Always use proper Markdown table syntax.
+        - Tables must contain SHORT content only.
+        - Never place full paragraphs inside table cells.
+        - Keep each cell under 15 words when possible.
+        - Use bullet lists instead of tables for long explanations.
         """
 
         if idx == 0:

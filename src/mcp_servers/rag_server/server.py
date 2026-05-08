@@ -163,39 +163,35 @@ class RAG_Server:
 
             # Rerank
             pairs = [(query, doc) for doc in documents]
-            scores = self.cross_encoder.predict(pairs)
+            scores_raw = self.cross_encoder.predict(pairs)
+            scores_norm = 1 / (1 + np.exp(-scores_raw))  # sigmoid
 
-            # Sort by score descending
-            top_indices = np.argsort(scores)[-top_n:][::-1]
+            RELEVANCE_THRESHOLD = 0.4
 
-            # Apply same ordering to everything
-            documents = [documents[i] for i in top_indices]
-            metadatas = [metadatas[i] for i in top_indices]
-            distances = [distances[i] for i in top_indices]
-            scores = [scores[i] for i in top_indices]
+            ################ RELEVANCE GATE ################
 
-            ################ FORMAT ################
+            # Bail out entirely if even the best result doesn't clear the threshold
+            if scores_norm[np.argsort(scores_norm)[-1]] < RELEVANCE_THRESHOLD:
+                logger.info(f"Query '{query}' returned no results above relevance threshold ({RELEVANCE_THRESHOLD}). Best score: {scores_norm[np.argsort(scores_norm)[-1]]:.3f}")
+                return {
+                    "query": query,
+                    "error": "No relevant documents found for the query.",
+                    "results": []
+                }
 
-            # formatted_results = []
-            
-            # for i, (doc, metadata, distance, score) in enumerate(zip(documents, metadatas, distances, scores)):
-            #     result_text = f"\n--- Result {i+1} ---\n"
-            #     result_text += f"Content: {doc}\n"
-                
-            #     if include_metadata and metadata:
-            #         result_text += f"File Name: {metadata.get('file_name', 'Unknown')}\n"
-            #         result_text += f"Source: {metadata.get('file_path', 'Unknown')}\n"
-            #         result_text += f"Page Number: {metadata.get('page_number', 'Unknown')}\n"
-            #         #result_text += f"Chunk: {metadata.get('chunk_index', 'Unknown')} of {metadata.get('total_chunks', 'Unknown')}\n"
-            #         result_text += f"Similarity Score: {1 - distance:.3f}\n" # Sta ce nam ovo?
-            #         result_text += f"Relevance Score: {score:.3f}\n" # Sta ce nam ovo?
-                
-            #     formatted_results.append(result_text)
-            
-            # response = f"Found {len(documents)} relevant documents for query: '{query}'\n"
-            # response += "\n".join(formatted_results)
-            
-            logger.info(f"Query '{query}' returned {len(documents)} results")
+            # Filter individually, then take top_n of what remains
+            filtered = [
+                (doc, meta, dist, score_r, score_n)
+                for doc, meta, dist, score_r, score_n
+                in zip(documents, metadatas, distances, scores_raw, scores_norm)
+                if score_n >= RELEVANCE_THRESHOLD
+            ]
+
+            # Sort filtered results by normalized score descending, cap at top_n
+            filtered.sort(key=lambda x: x[4], reverse=True)
+            filtered = filtered[:top_n]
+
+            logger.info(f"Query '{query}' returned {len(filtered)} results above relevance threshold ({RELEVANCE_THRESHOLD})")
 
             return {
                 "query": query,
@@ -203,13 +199,13 @@ class RAG_Server:
                 "results": [
                     {
                         "content": doc,
-                        "file_name": metadata.get("file_name", 'Unknown'),
-                        "source": metadata.get("file_path", 'Unknown'),
-                        "page_number": metadata.get("page_number", 'Unknown'),
-                        "similarity_score": f"{1 - distance:.3f}",
-                        "relevance_score": f"{score:.3f}",
+                        "file_name": meta.get("file_name", "Unknown"),
+                        "source": meta.get("file_path", "Unknown"),
+                        "page_number": meta.get("page_number", "Unknown"),
+                        "similarity_score": f"{1 - dist:.3f}",
+                        "relevance_score": f"{score_n:.3f}",
                     }
-                    for doc, metadata, distance, score in zip(documents, metadatas, distances, scores)
+                    for doc, meta, dist, score_r, score_n in filtered
                 ]
             }
             
@@ -221,6 +217,43 @@ class RAG_Server:
                 "error": error_msg,
                 "results": []
             }
+
+        #     # Sort by score descending
+        #     top_indices = np.argsort(scores)[-top_n:][::-1]
+
+        #     # Apply same ordering to everything
+        #     documents = [documents[i] for i in top_indices]
+        #     metadatas = [metadatas[i] for i in top_indices]
+        #     distances = [distances[i] for i in top_indices]
+        #     scores = [scores[i] for i in top_indices]
+
+            
+        #     logger.info(f"Query '{query}' returned {len(documents)} results")
+
+        #     return {
+        #         "query": query,
+        #         "error": None,
+        #         "results": [
+        #             {
+        #                 "content": doc,
+        #                 "file_name": metadata.get("file_name", 'Unknown'),
+        #                 "source": metadata.get("file_path", 'Unknown'),
+        #                 "page_number": metadata.get("page_number", 'Unknown'),
+        #                 "similarity_score": f"{1 - distance:.3f}",
+        #                 "relevance_score": f"{score:.3f}",
+        #             }
+        #             for doc, metadata, distance, score in zip(documents, metadatas, distances, scores)
+        #         ]
+        #     }
+            
+        # except Exception as e:
+        #     error_msg = f"Error querying documents: {str(e)}"
+        #     logger.error(error_msg)
+        #     return {
+        #         "query": query,
+        #         "error": error_msg,
+        #         "results": []
+        #     }
 
     #####################################################################################################################
     #################################################### MCP PROMPTS ####################################################
