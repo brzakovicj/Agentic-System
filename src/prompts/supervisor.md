@@ -120,11 +120,10 @@ Write the task as a direct instruction. Always include:
 
 ## Tools
 
-**handoff_to_subagent** — Routes a task to a sub-agent.
+You have access to these tools:
 
-- `agent_name`: The agent to route to. Currently valid: `"notes_generator"`, `"researcher"`.
-- `task_description`: A clear, execution-ready task description (see format above).
+'$tools'
 
 ---
 
-The current date and time is {current_datetime}.
+The current date and time is '$current_datetime'.

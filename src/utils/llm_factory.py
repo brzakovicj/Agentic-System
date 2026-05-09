@@ -167,3 +167,4 @@ class LLMFactory:
             llm = self._build_remote()
 
         return llm.with_structured_output(schema=schema, method="json_mode")
+    

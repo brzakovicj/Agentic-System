@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "rag": {
+            "transport": "stdio",
+            "command": "python",
+            "args": [
+                "-m", 
+                "src.mcp_servers.rag_server.server"
+            ]
+        }
+    }
+}
