@@ -12,6 +12,10 @@ from src.multi_agent.supervisor.tools import handoff_to_subagent
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 
+from tenacity import RetryError
+
+from src.utils.retryable_invoke import ainvoke_llm
+
 load_dotenv()
 
 class SupervisorAgent:
@@ -65,13 +69,36 @@ class SupervisorAgent:
 
         return self.graph
     
+    # async def supervisor(self, state: SupervisorState):
+    #     """The main supervisor agent."""
+
+    #     # Build messages
+    #     messages = [SystemMessage(content = self.supervisor_prompt)] + state.messages
+
+    #     try:
+    #         response = await self.llm_with_tools.ainvoke(messages + state.messages)
+    #     except Exception as e:
+    #         response = AIMessage(content=f"Error during LLM call: {str(e)}")
+
+    #     print("\n--- SUPERVISOR STATE ---")
+    #     print(type(response).__name__, getattr(response, "content", ""))
+    #     if hasattr(response, "tool_calls"):
+    #         print("TOOL CALLS:", response.tool_calls)
+
+    #     return {"messages": [response]}
+    
     async def supervisor(self, state: SupervisorState):
         """The main supervisor agent."""
+        messages = [SystemMessage(content=self.supervisor_prompt)] + state.messages
 
-        # Build messages
-        messages = [SystemMessage(content = self.supervisor_prompt)]
-
-        response = await self.llm_with_tools.ainvoke(messages + state.messages)
+        try:
+            response = await ainvoke_llm(self.llm_with_tools, messages)
+        except RetryError as e:
+            print("LLM call failed after all retries: %s", e.last_attempt.exception())
+            raise  # LangGraph obradjuje dalje
+        except Exception:
+            print("Exception: Non-retryable LLM error")
+            raise
 
         print("\n--- SUPERVISOR STATE ---")
         print(type(response).__name__, getattr(response, "content", ""))
