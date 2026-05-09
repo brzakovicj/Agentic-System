@@ -44,7 +44,7 @@ class SupervisorAgent:
         builder = StateGraph(SupervisorState)
 
         self.research_graph = await self.research_agent.initialize()
-        self.notes_generator_graph = await self.notes_generator.initialize()
+        self.notes_generator_graph = await self.notes_generator.initialize(self.research_graph)
 
         builder.add_node(self.supervisor)
         builder.add_node("tools", ToolNode(self.tools))
