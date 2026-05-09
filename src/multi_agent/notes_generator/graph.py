@@ -7,7 +7,6 @@ from langgraph.prebuilt import ToolNode
 
 from src.multi_agent.notes_generator.state import NotesGeneratorState
 from src.multi_agent.notes_generator.tools import create_pdf
-from src.multi_agent.researcher.mcp.client import MCPClient
 
 import os
 import json

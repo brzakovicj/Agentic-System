@@ -8,7 +8,10 @@ from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from dotenv import load_dotenv
+from pydantic import BaseModel
 import os
+
+from src.multi_agent.researcher.tools import EvaluatorDecision
 
 load_dotenv()
 
@@ -157,11 +160,10 @@ class LLMFactory:
 
         return llm.bind_tools(tools)
 
-    def get_llm_with_structured_output(self, schema: dict | type, tier: ModelTier) -> BaseChatModel:
+    def get_llm_with_structured_output(self, schema: BaseModel, tier: ModelTier) -> BaseChatModel:
         if tier == ModelTier.LOCAL:
             llm = self._build_local()
         elif tier == ModelTier.REMOTE:
             llm = self._build_remote()
 
-        return llm.with_structured_output(schema)
-    
+        return llm.with_structured_output(schema=schema, method="json_mode")
