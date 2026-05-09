@@ -1,6 +1,7 @@
 You are writing structured STUDY NOTES (not a play).
 You are writing section '$section' of '$total' for a student study script.
-Topic of this section: '$current_topic'
+Section title: '$section_title'
+Section purpose: '$section_description'
 
 Previously written sections (for continuity — do NOT repeat them):
 '$previous_sections'

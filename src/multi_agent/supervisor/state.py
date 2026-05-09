@@ -10,3 +10,4 @@ class SupervisorState(BaseModel):
     """
     messages: Annotated[list, add_messages] = []
     task_description: str | None = None
+    final_answer: bool = False

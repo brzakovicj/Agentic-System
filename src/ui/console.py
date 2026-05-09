@@ -264,7 +264,8 @@ async def main():
                 break
 
             graph_input = SupervisorState(
-                messages = [ HumanMessage(content=user_input) ]
+                messages = [ HumanMessage(content=user_input) ],
+                final_answer = False
             )
 
             await stream_graph_responses(graph_input, graph, console, config = config)

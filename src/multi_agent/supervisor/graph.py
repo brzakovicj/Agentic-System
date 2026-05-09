@@ -111,11 +111,12 @@ class SupervisorAgent:
         """Route to the tools node if the supervisor makes a tool call."""
         last_message = state.messages[-1]
 
-        if isinstance(last_message, AIMessage) and last_message.name == "researcher":
+        if state.final_answer:
             return END
 
         if last_message.tool_calls:
             return "tools"
+        
         return END
 
     async def call_notes_generator(self, state: SupervisorState, config: RunnableConfig):
@@ -148,6 +149,7 @@ class SupervisorAgent:
 
         return {
             "messages": [ai_message],
+            "final_answer": True
         }
 
     async def call_researcher(self, state: SupervisorState, config: RunnableConfig):
@@ -175,6 +177,7 @@ class SupervisorAgent:
 
         return {
             "messages": [ai_message],
+            "final_answer": True
         }
 
 # Visualize the graph

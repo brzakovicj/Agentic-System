@@ -32,7 +32,7 @@ class NotesGeneratorState(TypedDict):
     # ------------------------------------------------------------------ #
  
     # Table of contents produced by the planner
-    outline: List[str]
+    outline: List[dict]
  
     # Written sections accumulated by the writer (operator.add → append)
     content_chunks: Annotated[List[str], operator.add]

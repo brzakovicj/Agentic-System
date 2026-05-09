@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List
 import uuid
 import os
 import html
@@ -6,6 +7,7 @@ import re
 from bs4 import BeautifulSoup
 import markdown
 
+from pydantic import BaseModel, Field
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
@@ -263,3 +265,20 @@ def create_pdf(text: str) -> str:
         ) from exc
 
     return file_path
+
+
+class SectionSchema(BaseModel):
+    title: str = Field(
+        description="Concise section heading.",
+        min_length=1
+    )
+    description: str = Field(
+        description="Detailed explanation of what this section should cover, its learning objective, and how it connects to surrounding sections.",
+        min_length=10
+    )
+
+class PlannerSchema(BaseModel):
+    outline: List[SectionSchema] = Field(
+        description="Ordered list containing all sections of the study script outline.",
+        min_length=3
+    )

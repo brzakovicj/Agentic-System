@@ -7,6 +7,7 @@ from langgraph.graph import StateGraph, END
 from datetime import datetime
 from langgraph.prebuilt import ToolNode
 # from src.multi_agent.researcher.mcp import mcp_config
+from src.multi_agent.notes_generator.tools import PlannerSchema
 from src.multi_agent.researcher.state import ResearcherState
 from src.multi_agent.researcher.tools import EvaluatorDecision
 from src.prompts.prompt_manager import PromptManager
@@ -221,6 +222,9 @@ class ResearcherAgent:
  
         try:
             decision: EvaluatorDecision = await llm.ainvoke(messages)
+
+            if isinstance(decision, dict):
+                decision = EvaluatorDecision(**decision)
 
             print("\n---------- EVALUATOR-------------\n")
             print(type(decision).__name__, getattr(decision, "need_web_search", ""))

@@ -8,7 +8,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 
 from src.multi_agent.notes_generator.state import NotesGeneratorState
-from src.multi_agent.notes_generator.tools import create_pdf
+from src.multi_agent.notes_generator.tools import PlannerSchema, create_pdf
 
 import os
 import json
@@ -232,25 +232,19 @@ class NotesGeneratorAgent:
     async def planner(self, state: NotesGeneratorState):
         """Turns the research summary into a structured Table of Contents."""
         
+        llm = self.llm_factory.get_llm_with_structured_output(schema=PlannerSchema, tier=ModelTier.REMOTE)
+
         prompt = self.prompt_manager.get("notes_planner_prompt", search_query = state["search_query"], research_data = state["research_data"])
+
+        response: PlannerSchema = await llm.ainvoke([SystemMessage(content = prompt)])
         
-        llm = self.llm_factory.get_remote_llm()
-        response = await llm.ainvoke([SystemMessage(content = prompt)])
-        outline = self._parse_json_list(response.content) 
-        
+        if isinstance(response, dict):
+            response = PlannerSchema(**response)
+
         return {
-            "outline": outline,
+            "outline": response.outline,
             "current_section_idx": 0
         }
-    
-    def _parse_json_list(self, text: str) -> List[str]:
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            match = re.search(r"\[.*?\]", text, re.DOTALL)
-            if match:
-                return json.loads(match.group())
-            raise ValueError("Could not parse outline from LLM response:\n{text}")
     
     # ------------------------------------------------------------------ #
     
@@ -259,7 +253,7 @@ class NotesGeneratorAgent:
     
         idx = state["current_section_idx"]
         total = len(state["outline"])
-        current_topic = state["outline"][idx]
+        current_section = state["outline"][idx]
 
         # Provide only the two most recent sections as context to avoid
         # inflating the prompt with the entire document on every iteration.
@@ -269,7 +263,8 @@ class NotesGeneratorAgent:
             "notes_writer_prompt",
             idx = idx + 1,
             total = total,
-            current_topic = current_topic,
+            section_title = current_section.title,
+            section_description = current_section.description,
             recent_content = recent_content if recent_content else "None yet.",
             research_data = state["research_data"]
         )
