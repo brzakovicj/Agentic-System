@@ -1,50 +1,25 @@
-from typing import List
-
 from dotenv import load_dotenv
-from langchain.messages import AIMessage
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
-
+from langchain_core.runnables import RunnableConfig
+from src.prompts.prompt_manager import PromptManager
+from src.utils.llm_factory import LLMFactory, ModelTier
+from langchain_core.messages import HumanMessage, SystemMessage
+from src.multi_agent.researcher.graph import ResearcherAgent
 from src.multi_agent.notes_generator.state import NotesGeneratorState
 from src.multi_agent.notes_generator.tools import PlannerSchema, create_pdf
 
-import os
-import json
-import re
-
-from src.multi_agent.researcher.graph import ResearcherAgent
-from src.prompts.prompt_manager import PromptManager
-from src.utils.llm_factory import LLMFactory, ModelTier
-from src.utils.mcp_client import MCPClient
-
 load_dotenv()
-
-MAX_RESEARCH_ITERATIONS = 5
 
 class NotesGeneratorAgent:
     def __init__(self):
         self.graph = None
         self.tools = None
         self.prompt_manager = PromptManager()
-        
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(base_dir, "mcp", "config.json")
-
-        with open(config_path, "r") as f:
-            self.mcp_config = json.load(f)
-
         self.research_agent = ResearcherAgent()
 
     async def initialize(self, research_graph):
         """Async initialisation: connects MCP client and compiles the graph."""
-        # Cleanly replace any previous MCP client to avoid connection leaks
-        if hasattr(self, "mcp_client"):
-            await self.mcp_client.close()  # call whatever cleanup your MCPClient exposes
         
-        self.mcp_client = MCPClient(self.mcp_config)
-        self.tools = await self.mcp_client.get_tools()
         self.llm_factory = LLMFactory.get_instance()
 
         self.research_graph = research_graph
@@ -64,20 +39,10 @@ class NotesGeneratorAgent:
         builder.add_node("planner", self.planner)
         builder.add_node("writer", self.writer)
         builder.add_node("publisher", self.publisher)
-        builder.add_node("tools", ToolNode(self.tools))
 
         builder.set_entry_point("researcher")
+        builder.add_edge("researcher", "planner")
         builder.add_edge("planner", "writer")
-        
-        builder.add_conditional_edges(
-            "researcher",
-            self.researcher_router,
-            {
-                "planner": "planner",
-                "tools": "tools",
-                "researcher": "researcher"
-            }
-        )
 
         builder.add_conditional_edges(
             "writer",
@@ -88,7 +53,6 @@ class NotesGeneratorAgent:
             }
         )
 
-        builder.add_edge("tools", "researcher")
         builder.add_edge("publisher", END)
 
         # Do NOT attach a checkpointer here — the parent supervisor graph's
@@ -118,114 +82,9 @@ class NotesGeneratorAgent:
             print("TOOL CALLS:", research_response["messages"][-1].tool_calls)
 
         return {
-            "messages": [],           # clear to save context window
             "research_data": getattr(research_response["messages"][-1], "content", ""),
             "research_complete": True
         }
-
-    # async def researcher(self, state: NotesGeneratorState):
-    #     """
-    #     Queries the vector store (and optionally the web) to collect material
-    #     for the topic. Loops via tool calls until coverage is sufficient or
-    #     MAX_RESEARCH_ITERATIONS is reached.
-    #     """
-    #     # Guard: force completion if we have been looping too long
-    #     if state["research_iterations"] >= MAX_RESEARCH_ITERATIONS:
-    #         # Synthesise whatever we have so far and mark done
-    #         fallback_summary = "\n\n".join(
-    #             msg.content
-    #             for msg in state["messages"]
-    #             if hasattr(msg, "content") and msg.content
-    #         )
-    #         return {
-    #             "research_data": fallback_summary or "No research data collected.",
-    #             "research_complete": True,
-    #             # Clear messages now that research is done to keep the context
-    #             # window lean for the planner/writer nodes.
-    #             "messages": [],
-    #         }
-
-    #     prompt = f"""
-    #     You are a Research Agent with access to an internal knowledge base and web resources.
-
-    #     ## Objective
-    #     Collect complete, relevant, and well-structured research material on the following topic:
-
-    #     <topic>
-    #     {state['search_query']}
-    #     </topic>
-
-    #     ## Research Strategy
-    #     Follow this order strictly:
-
-    #     1. **Internal knowledge base first** — begin by querying the internal knowledge base.
-    #     Issue at most 3 focused queries covering different facets of the topic. If the knowledge
-    #     base does not contain relevant material, accept that conclusion and move on — do not
-    #     rephrase the same query indefinitely.
-
-    #     2. **Web resources to fill gaps** — after the internal knowledge base is exhausted or
-    #     conclusively unhelpful, use web resources to find and retrieve detailed information
-    #     on the topic. Retrieve the full content of promising sources, not just surface-level
-    #     summaries.
-
-    #     ## Stopping Condition
-    #     You have done enough research when you have gathered substantive information from
-    #     at least 3 high-quality sources, or when further querying is clearly not producing
-    #     new information. At that point, stop and write the report immediately.
-
-    #     ## Source Discipline
-    #     - Every claim must be traceable to a specific source.
-    #     - Internal sources: cite file name, page number, and relevance score.
-    #     - Web sources: cite the URL and publication date where available.
-    #     - Discard irrelevant results — do not include them to pad coverage.
-
-    #     ## Output (after ALL querying is complete)
-    #     Produce a single dense research dump in Markdown. Do not impose thematic structure —
-    #     the outline planner downstream will handle organization. Focus on:
-    #     - **Completeness** — include everything relevant you found.
-    #     - **Citations on every claim**.
-    #     - **Gaps** — end with a short list of aspects that could not be sourced, so the
-    #     planner knows what coverage is missing.
-    #     """
-
-    #     print("\n\n--- CURRENT MESSAGES ---\n\n")
-    #     for m in state["messages"]:
-    #         print(type(m), getattr(m, "content", None)[:300])
-
-    #     print("\n\n----------------------\n\n")
-
-    #     llm_with_tools = self.llm_factory.get_tool_llm(ModelTier.REMOTE, self.tools)
-    #     response = await llm_with_tools.ainvoke(
-    #         [SystemMessage(content = prompt)] + state["messages"]
-    #     )
-        
-    #     # No tool calls → the LLM produced its final synthesis
-    #     if not response.tool_calls:
-    #         return {
-    #             "messages": [],           # clear to save context window
-    #             "research_data": response.content,
-    #             "research_complete": True,
-    #             "research_iterations": state["research_iterations"] + 1,
-    #         }
-
-    #     return {
-    #         "messages": [response],
-    #         "research_iterations": state["research_iterations"] + 1,
-    #     }
-
-    def researcher_router(self, state: NotesGeneratorState) -> str:
-        last = state["messages"][-1] if state["messages"] else None
-
-        # If the last message carries tool calls, dispatch them
-        if last and hasattr(last, "tool_calls") and last.tool_calls:
-            return "tools"
-        
-        # Research finished (either naturally or by the iteration guard)
-        if state.get("research_complete"):
-            return "planner"
-        
-        # Otherwise keep researching
-        return "researcher"
 
     # ------------------------------------------------------------------ #
     
