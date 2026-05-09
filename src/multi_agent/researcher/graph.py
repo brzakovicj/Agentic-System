@@ -7,11 +7,11 @@ from langgraph.graph import StateGraph, END
 from datetime import datetime
 from langgraph.prebuilt import ToolNode
 # from src.multi_agent.researcher.mcp import mcp_config
-from src.multi_agent.researcher.mcp.client import MCPClient
 from src.multi_agent.researcher.state import ResearcherState
 from src.multi_agent.researcher.tools import EvaluatorDecision
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
+from src.utils.mcp_client import MCPClient
 
 load_dotenv()
 

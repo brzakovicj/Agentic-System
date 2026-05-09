@@ -1,6 +1,5 @@
 import asyncio
 import sys
-from src.client import client_main
 from src.mcp_servers.chromadb_server.server import mcp
 from src.ui.console import main as multi_agent_main
 from src.utils.llm_factory import LLMFactory
@@ -17,10 +16,7 @@ def main():
     
     mode = sys.argv[1]
 
-    if mode == "client":
-        asyncio.run(client_main())
-
-    elif mode == "server":
+    if mode == "server":
         mcp.run(transport="stdio")
 
     elif mode == "supervisor":

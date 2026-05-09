@@ -14,6 +14,7 @@ import re
 
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
+from src.utils.mcp_client import MCPClient
 
 load_dotenv()
 

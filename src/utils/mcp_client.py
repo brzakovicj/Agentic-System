@@ -11,4 +11,5 @@ class MCPClient:
 
             return tools
         except Exception as e:
+            print(f"MCP config: {self.client.connections}")
             raise RuntimeError(f"Failed to fetch tools from MCP servers: {e}")
