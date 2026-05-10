@@ -1,26 +1,17 @@
 import os
 import uuid
 import markdown
-from typing import List
+from typing import List, TypedDict
 from weasyprint import HTML
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-class SectionSchema(BaseModel):
-    title: str = Field(
-        description="Concise section heading.",
-        min_length=1
-    )
-    description: str = Field(
-        description="Detailed explanation of what this section should cover, its learning objective, and how it connects to surrounding sections.",
-        min_length=10
-    )
+class SectionSchema(TypedDict):
+    title: str
+    description: str
 
-class PlannerSchema(BaseModel):
-    outline: List[SectionSchema] = Field(
-        description="Ordered list containing all sections of the study script outline.",
-        min_length=3
-    )
+class PlannerSchema(TypedDict):
+    outline: List[SectionSchema]
 
 def _generate_file_path(output_dir="outputs"):
     os.makedirs(output_dir, exist_ok=True)
