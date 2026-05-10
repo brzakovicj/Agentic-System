@@ -1,11 +1,9 @@
-import operator
-from pydantic import BaseModel
-from typing import Annotated
+from typing import Annotated, TypedDict
 from langgraph.graph import add_messages
 
 from src.multi_agent.supervisor.tools import TaskSchema
 
-class SupervisorState(BaseModel):
+class SupervisorState(TypedDict):
     """
         The state of the supervisor agent. 
     """

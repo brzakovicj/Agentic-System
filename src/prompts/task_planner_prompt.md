@@ -38,9 +38,13 @@ When **notes_generator** is required, **researcher** must always run first — n
 
 ## Task definition rules
 
-Each task must include:
+Return a JSON object with:
 - **name** – a short, action-oriented label (e.g. `research_topic`, `generate_study_script`)
-- **description** – a precise instruction for the sub-agent, written as if speaking directly to it. Include the topic, scope, and any constraints derived from the user request.
+- **description** – a precise instruction for the sub-agent, written as if speaking directly to it. 
+  Include the topic, scope, and any constraints derived from the user request.
+  **Maximum 2 sentences. Do not repeat any phrase or concept.**
+
+Do not repeat yourself. Be concise.
 
 ## Examples
 

@@ -68,13 +68,14 @@ class NotesGeneratorAgent:
 
         prompt = self.prompt_manager.get("notes_planner_prompt", search_query = state["search_query"], research_data = state["research_data"])
 
-        response: PlannerSchema = await llm.ainvoke([SystemMessage(content = prompt)])
-        
-        if isinstance(response, dict):
-            response = PlannerSchema(**response)
+        response = await llm.ainvoke([SystemMessage(content = prompt)])
+
+        print("\n---------- PLANNER -------------\n")
+        print(response)
+        print("\n-----------------------\n")
 
         return {
-            "outline": response.outline,
+            "outline": response["outline"],
             "current_section_idx": 0
         }
     

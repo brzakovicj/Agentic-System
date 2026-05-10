@@ -124,19 +124,19 @@ class ResearcherAgent:
         self._graph = builder.compile()
 
     async def retriever_router(self, state: ResearcherState) -> str:
-        last_msg = state.messages[-1]
+        last_msg = state["messages"][-1]
         if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
             return "tools"
         return "evaluator"
 
     async def evaluator_router(self, state: ResearcherState) -> str:
         """Route to the web search node if the evaluator determines that retrieval was insufficient, otherwise route to the sintesis node."""
-        if state.need_web_search:
+        if state["need_web_search"]:
             return "web_searcher"
         return "synthesizer"
     
     async def web_searcher_router(self, state: ResearcherState) -> str:
-        last_msg = state.messages[-1]
+        last_msg = state["messages"][-1]
         if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
             return "tools"
         return "synthesizer"
@@ -159,7 +159,7 @@ class ResearcherAgent:
             for tool in self._mcp_tools_retriever_node
         )
 
-        research_retriever_prompt = self._prompt_manager.get("research_retriever_prompt", query=state.query, tools=tools_context)
+        research_retriever_prompt = self._prompt_manager.get("research_retriever_prompt", query=state["query"], tools=tools_context)
         
         # Build messages
         messages = [
@@ -167,7 +167,7 @@ class ResearcherAgent:
         ]
 
         try:
-            response = await llm.ainvoke(messages + state.messages)
+            response = await llm.ainvoke(messages + state["messages"])
         except Exception as e:
             return {
                 "error": f"LLM call failed: {e}"
@@ -194,7 +194,7 @@ class ResearcherAgent:
             If there are errors during evaluation, it will return an error message and default to indicating that a web 
             search is needed.
         """
-        retrieval_results = state.retrieved_docs or []
+        retrieval_results = state["retrieved_docs"] or []
 
         if not retrieval_results or len(retrieval_results) == 0:
             return {
@@ -209,25 +209,21 @@ class ResearcherAgent:
             for doc in retrieval_results
         )
 
-        evaluator_prompt = self._prompt_manager.get("research_evaluator_prompt", query=state.query, documents=docs_context)
+        evaluator_prompt = self._prompt_manager.get("research_evaluator_prompt", query=state["query"], documents=docs_context)
 
         messages = [
             SystemMessage(content=evaluator_prompt)
         ]
  
         try:
-            decision: EvaluatorDecision = await llm.ainvoke(messages)
-
-            if isinstance(decision, dict):
-                decision = EvaluatorDecision(**decision)
+            decision = await llm.ainvoke(messages)
 
             print("\n---------- EVALUATOR-------------\n")
-            print(type(decision).__name__, getattr(decision, "need_web_search", ""))
-            print(type(decision).__name__, getattr(decision, "reason", ""))
+            print(decision)
             print("\n-----------------------\n")
 
             return {
-                "need_web_search": decision.need_web_search
+                "need_web_search": decision["need_web_search"]
             }
         except Exception as exc:
             return {
@@ -252,7 +248,7 @@ class ResearcherAgent:
 
         web_prompt = self._prompt_manager.get(
             "research_web_searcher_prompt",
-            query=state.query,
+            query=state["query"],
             tools=tools_context,
             current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
@@ -263,7 +259,7 @@ class ResearcherAgent:
         ]
  
         try:
-            response = await llm.ainvoke(messages + state.messages)
+            response = await llm.ainvoke(messages + state["messages"])
         except Exception as exc:
             return {
                 "error": str(exc)
@@ -293,8 +289,8 @@ class ResearcherAgent:
         # LLM
         llm = self.factory.get_base_llm()
         
-        retrieved_sources = state.retrieved_docs or []
-        web_sources = state.web_results or []
+        retrieved_sources = state["retrieved_docs"] or []
+        web_sources = state["web_results"] or []
 
         all_sources = "\n\n".join(
             f"{self._stringify_content(source)}"
@@ -303,7 +299,7 @@ class ResearcherAgent:
         
         prompt = self._prompt_manager.get(
             "research_synthesizer_prompt",
-            query=state.query,
+            query=state["query"],
             sources=all_sources,
         )
  

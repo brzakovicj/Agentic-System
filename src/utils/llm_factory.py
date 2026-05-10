@@ -1,13 +1,12 @@
 import sys
 import logging
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, TypedDict
 from langchain.tools import BaseTool
 from langchain_ollama.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
 from dotenv import load_dotenv
-from pydantic import BaseModel
 import os
 
 load_dotenv()
@@ -157,7 +156,7 @@ class LLMFactory:
 
         return llm.bind_tools(tools)
 
-    def get_llm_with_structured_output(self, schema: BaseModel, tier: ModelTier) -> BaseChatModel:
+    def get_llm_with_structured_output(self, schema: type, tier: ModelTier) -> BaseChatModel:
         if tier == ModelTier.LOCAL:
             llm = self._build_local()
         elif tier == ModelTier.REMOTE:
