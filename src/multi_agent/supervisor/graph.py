@@ -8,7 +8,7 @@ from langgraph.types import RunnableConfig
 from src.multi_agent.researcher.graph import ResearcherAgent
 from src.multi_agent.notes_generator.graph import NotesGeneratorAgent
 from src.multi_agent.supervisor.state import SupervisorState
-from src.multi_agent.supervisor.tools import handoff_to_subagent
+from src.multi_agent.supervisor.tools import PlannerTaskSchema, handoff_to_subagent
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 
@@ -33,8 +33,8 @@ class SupervisorAgent:
 
         self.supervisor_prompt = self._prompt_manager.get("supervisor", tools=tools_context, current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
-        factory = LLMFactory.get_instance()
-        self.llm_with_tools = factory.get_tool_llm(ModelTier.REMOTE, self.tools)
+        self._llm_factory = LLMFactory.get_instance()
+        self.llm_with_tools = self._llm_factory.get_tool_llm(ModelTier.REMOTE, self.tools)
 
         self.research_agent = ResearcherAgent()
         self.notes_generator = NotesGeneratorAgent()
@@ -46,12 +46,15 @@ class SupervisorAgent:
         self.research_graph = await self.research_agent.initialize()
         self.notes_generator_graph = await self.notes_generator.initialize(self.research_graph)
 
-        builder.add_node(self.supervisor)
+        builder.add_node("planner", self.planner)
+        builder.add_node("supervisor", self.supervisor)
         builder.add_node("tools", ToolNode(self.tools))
         builder.add_node(self.call_researcher)
         builder.add_node("call_notes_generator",self.call_notes_generator)
 
-        builder.set_entry_point("supervisor")
+        builder.set_entry_point("planner")
+
+        builder.add_edge("planner", "supervisor")
 
         builder.add_conditional_edges(
             "supervisor",
@@ -69,44 +72,6 @@ class SupervisorAgent:
 
         return self.graph
     
-    # async def supervisor(self, state: SupervisorState):
-    #     """The main supervisor agent."""
-
-    #     # Build messages
-    #     messages = [SystemMessage(content = self.supervisor_prompt)] + state.messages
-
-    #     try:
-    #         response = await self.llm_with_tools.ainvoke(messages + state.messages)
-    #     except Exception as e:
-    #         response = AIMessage(content=f"Error during LLM call: {str(e)}")
-
-    #     print("\n--- SUPERVISOR STATE ---")
-    #     print(type(response).__name__, getattr(response, "content", ""))
-    #     if hasattr(response, "tool_calls"):
-    #         print("TOOL CALLS:", response.tool_calls)
-
-    #     return {"messages": [response]}
-    
-    async def supervisor(self, state: SupervisorState):
-        """The main supervisor agent."""
-        messages = [SystemMessage(content=self.supervisor_prompt)] + state.messages
-
-        try:
-            response = await ainvoke_llm(self.llm_with_tools, messages)
-        except RetryError as e:
-            print("LLM call failed after all retries: %s", e.last_attempt.exception())
-            raise  # LangGraph obradjuje dalje
-        except Exception:
-            print("Exception: Non-retryable LLM error")
-            raise
-
-        print("\n--- SUPERVISOR STATE ---")
-        print(type(response).__name__, getattr(response, "content", ""))
-        if hasattr(response, "tool_calls"):
-            print("TOOL CALLS:", response.tool_calls)
-
-        return {"messages": [response]}
-
     def supervisor_router(self, state: SupervisorState) -> str:
         """Route to the tools node if the supervisor makes a tool call."""
         last_message = state.messages[-1]
@@ -118,6 +83,86 @@ class SupervisorAgent:
             return "tools"
         
         return END
+    
+    ###################################################################################
+    # NODE FUNCTIONS
+    ###################################################################################
+
+    async def planner(self, state: SupervisorState):
+        """The planner agent, which breaks down the task into smaller sub-tasks."""
+        llm = self._llm_factory.get_llm_with_structured_output(
+            schema=PlannerTaskSchema, 
+            tier=ModelTier.REMOTE
+        )
+
+        prompt = self._prompt_manager.get("task_planner_prompt")
+        messages = [SystemMessage(content=prompt)] + state.messages
+
+        try:
+            response: PlannerTaskSchema = await llm.ainvoke(messages)
+
+            print("\n--- PLANNER NODE ---\n")
+            print(type(response).__name__, getattr(response, "plan", ""))
+
+            if isinstance(response, dict):
+                response = PlannerTaskSchema(**response)
+
+            return {
+                "plan": response.plan,
+                "current_task_idx": 0,
+            }
+        except Exception as e:
+            print(f"Error in planner node: {e}")
+            raise
+    
+    async def supervisor(self, state: SupervisorState):
+        """The main supervisor agent."""
+        idx = state.current_task_idx
+        plan = state.plan if state.plan else []
+
+        if not plan or idx >= len(plan):
+            return {
+                "final_answer": True,
+            }
+        
+        total = len(plan)
+        current_task = plan[idx]
+
+        # Provide only the two most recent messages as context to avoid
+        # inflating the prompt with the entire messages on every iteration.
+        recent = state.messages[-2:] if state.messages else []
+        messages = "\n\n".join(
+            m.content for m in recent
+            if hasattr(m, "content") and m.content
+        )
+
+        prompt = self._prompt_manager.get(
+            "supervisor",
+            idx = idx + 1,
+            total = total,
+            task_name = current_task.name,
+            task_description = current_task.description,
+            recent_messages = messages if messages else "None yet.",
+        )
+
+        try:
+            response = await ainvoke_llm(self.llm_with_tools, [SystemMessage(content = prompt)])
+        except RetryError as e:
+            print("LLM call failed after all retries: %s", e.last_attempt.exception())
+            raise
+        except Exception:
+            print("Exception: Non-retryable LLM error")
+            raise
+
+        print("\n--- SUPERVISOR NODE ---")
+        print(type(response).__name__, getattr(response, "content", ""))
+        if hasattr(response, "tool_calls"):
+            print("TOOL CALLS:", response.tool_calls)
+
+        return {
+            "messages": [response],
+            "current_task_idx": idx + 1,
+        }
 
     async def call_notes_generator(self, state: SupervisorState, config: RunnableConfig):
         """Call the notes generator agent.
@@ -127,9 +172,7 @@ class SupervisorAgent:
         notes_input = {
             "messages": [HumanMessage(content=state.task_description)],
             "search_query": state.task_description,
-            "research_data": "",
-            "research_complete": False,
-            "research_iterations": 0,
+            "research_data": state.research_data,
             "outline": [],
             "content_chunks": [],
             "current_section_idx": 0,
@@ -149,7 +192,6 @@ class SupervisorAgent:
 
         return {
             "messages": [ai_message],
-            "final_answer": True
         }
 
     async def call_researcher(self, state: SupervisorState, config: RunnableConfig):
@@ -177,7 +219,7 @@ class SupervisorAgent:
 
         return {
             "messages": [ai_message],
-            "final_answer": True
+            "research_data": research_response['messages'][-1].content,
         }
 
 # Visualize the graph

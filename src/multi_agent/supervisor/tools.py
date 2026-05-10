@@ -1,7 +1,24 @@
-from typing import Annotated, Literal
+from langgraph.types import Command
+from pydantic import BaseModel, Field
+from typing import Annotated, List, Literal
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool, InjectedToolCallId
-from langgraph.types import Command
+
+class TaskSchema(BaseModel):
+    name: str = Field(
+        description="The name of the task to be completed",
+        min_length=1
+    )
+    description: str = Field(
+        description="Explanation of what the task involves",
+        min_length=3
+    )
+
+class PlannerTaskSchema(BaseModel):
+    plan: List[TaskSchema] = Field(
+        description="Ordered list containing all the tasks that need to be completed in order to accomplish the goal, along with a detailed description of each task.",
+        min_length=1
+    )
 
 @tool
 async def handoff_to_subagent(

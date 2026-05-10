@@ -1,7 +1,7 @@
 import operator
 from typing import Annotated, List, TypedDict
-
 from langchain_core.messages import BaseMessage
+from src.multi_agent.notes_generator.tools import SectionSchema
 
 class NotesGeneratorState(TypedDict):
     # ------------------------------------------------------------------ #
@@ -20,19 +20,12 @@ class NotesGeneratorState(TypedDict):
     # Clean, synthesised Markdown summary produced by the researcher
     research_data: str
  
-    # Set to True once the researcher is satisfied (or the iteration cap hits)
-    research_complete: bool
- 
-    # Tracks how many researcher→tools→researcher round-trips have occurred.
-    # Guards against infinite tool-call loops.
-    research_iterations: int
- 
     # ------------------------------------------------------------------ #
     #  Writing phase                                                       #
     # ------------------------------------------------------------------ #
  
     # Table of contents produced by the planner
-    outline: List[dict]
+    outline: List[SectionSchema]
  
     # Written sections accumulated by the writer (operator.add → append)
     content_chunks: Annotated[List[str], operator.add]

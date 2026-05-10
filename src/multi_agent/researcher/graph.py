@@ -1,18 +1,15 @@
 import os
 import json
-from unittest import result
-from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage
-from langgraph.graph import StateGraph, END
 from datetime import datetime
+from dotenv import load_dotenv
 from langgraph.prebuilt import ToolNode
-# from src.multi_agent.researcher.mcp import mcp_config
-from src.multi_agent.notes_generator.tools import PlannerSchema
-from src.multi_agent.researcher.state import ResearcherState
-from src.multi_agent.researcher.tools import EvaluatorDecision
+from src.utils.mcp_client import MCPClient
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import SystemMessage
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
-from src.utils.mcp_client import MCPClient
+from src.multi_agent.researcher.state import ResearcherState
+from src.multi_agent.researcher.tools import EvaluatorDecision
 
 load_dotenv()
 
@@ -187,8 +184,6 @@ class ResearcherAgent:
             "messages": [response],
             "retrieved_docs": [response.content] if not response.tool_calls else []
         }
-
-    # Svaki node treba da ima svoj context!!!!!!!
 
     async def evaluator_node(self, state: ResearcherState) -> dict:
         """

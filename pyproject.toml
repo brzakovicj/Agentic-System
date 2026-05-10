@@ -23,4 +23,5 @@ dependencies = [
     "sentence-transformers>=5.4.1",
     "unstructured-inference>=1.6.6",
     "unstructured[all-docs]>=0.22.21",
+    "weasyprint>=68.1",
 ]

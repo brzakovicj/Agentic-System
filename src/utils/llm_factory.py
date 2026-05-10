@@ -6,12 +6,9 @@ from langchain.tools import BaseTool
 from langchain_ollama.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage
 from dotenv import load_dotenv
 from pydantic import BaseModel
 import os
-
-from src.multi_agent.researcher.tools import EvaluatorDecision
 
 load_dotenv()
 

@@ -1,271 +1,10 @@
-from datetime import datetime
-from typing import List
-import uuid
 import os
-import html
-import re
-from bs4 import BeautifulSoup
+import uuid
 import markdown
-
+from typing import List
+from weasyprint import HTML
+from datetime import datetime
 from pydantic import BaseModel, Field
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle,
-    ListFlowable,
-    ListItem,
-    Preformatted,
-)
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
-from reportlab.lib import colors
-
-def _generate_file_path(output_dir="outputs"):
-    os.makedirs(output_dir, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    unique_id = uuid.uuid4().hex[:6]
-
-    return os.path.join(output_dir, f"study_script_{timestamp}_{unique_id}.pdf")
-
-def markdown_to_flowables(markdown_text, styles, doc):
-    """
-    Convert Markdown into ReportLab flowables.
-    Supports:
-    - headings
-    - paragraphs
-    - bullet lists
-    - tables
-    - code blocks
-    """
-
-    html_text = markdown.markdown(
-        markdown_text,
-        extensions=["tables", "fenced_code"]
-    )
-
-    soup = BeautifulSoup(html_text, "html.parser")
-
-    flowables = []
-
-    body_style = styles["BodyText"]
-
-    for element in soup.find_all(recursive=False):
-
-        # ---------------- HEADINGS ----------------
-
-        if element.name == "h1":
-            flowables.append(
-                Paragraph(element.get_text(), styles["Heading1"])
-            )
-            flowables.append(Spacer(1, 10))
-
-        elif element.name == "h2":
-            flowables.append(
-                Paragraph(element.get_text(), styles["Heading2"])
-            )
-            flowables.append(Spacer(1, 8))
-
-        elif element.name == "h3":
-            flowables.append(
-                Paragraph(element.get_text(), styles["Heading3"])
-            )
-            flowables.append(Spacer(1, 6))
-
-        # ---------------- PARAGRAPHS ----------------
-
-        elif element.name == "p":
-            flowables.append(
-                Paragraph(str(element), body_style)
-            )
-            flowables.append(Spacer(1, 6))
-
-        # ---------------- BULLET LISTS ----------------
-
-        elif element.name == "ul":
-
-            items = []
-
-            for li in element.find_all("li", recursive=False):
-                items.append(
-                    ListItem(
-                        Paragraph(li.get_text(), body_style)
-                    )
-                )
-
-            flowables.append(
-                ListFlowable(
-                    items,
-                    bulletType="bullet"
-                )
-            )
-
-            flowables.append(Spacer(1, 6))
-
-        # ---------------- CODE BLOCKS ----------------
-
-        elif element.name == "pre":
-
-            code = element.get_text()
-
-            flowables.append(
-                Preformatted(
-                    code,
-                    styles["CustomCode"]
-                )
-            )
-
-            flowables.append(Spacer(1, 6))
-
-        # ---------------- TABLES ----------------
-
-        elif element.name == "table":
-
-            table_data = []
-
-            rows = element.find_all("tr")
-
-            for row in rows:
-
-                cols = row.find_all(["th", "td"])
-
-                table_data.append([
-                    Paragraph(
-                        col.get_text(strip=True),
-                        styles["BodyText"]
-                    )
-                    for col in cols
-                ])
-
-            num_cols = len(table_data[0])
-
-            available_width = doc.width
-
-            col_lengths = [0] * num_cols
-
-            for row in table_data:
-                for i, cell in enumerate(row):
-
-                    text = cell.text if hasattr(cell, "text") else str(cell)
-
-                    col_lengths[i] += len(text)
-
-            total_length = sum(col_lengths)
-
-            if total_length == 0:
-                total_length = 1
-
-            col_widths = [
-                available_width * (length / total_length)
-                for length in col_lengths
-            ]
-
-            min_width = 35 * mm
-
-            col_widths = [
-                max(width, min_width)
-                for width in col_widths
-            ]
-            
-            table = Table(
-                table_data,
-                repeatRows=1,
-                colWidths=col_widths
-            )
-
-            table.setStyle(
-                TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F81BD")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
-                    ("BACKGROUND", (0, 1), (-1, -1), colors.whitesmoke),
-                    ("TOPPADDING", (0, 0), (-1, -1), 8),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ])
-            )
-
-            flowables.append(table)
-            flowables.append(Spacer(1, 12))
-
-    return flowables
-
-def create_pdf(text: str) -> str:
-    """
-    Render a Markdown-ish string to a PDF at *file_path*.
- 
-    Supported Markdown:
-      # / ## / ###   headings
-      - / *          bullet points
-      **bold**        bold
-      *italic*        italic
-      ***bold-italic***
-      `inline code`   monospace
-      blank lines     vertical spacing
-    """
-
-    file_path = _generate_file_path()
-
-    doc = SimpleDocTemplate(
-        file_path,
-        pagesize=A4,
-        leftMargin=20 * mm,
-        rightMargin=20 * mm,
-        topMargin=20 * mm,
-        bottomMargin=20 * mm,
-    )
-
-    styles = getSampleStyleSheet()
-
-    # Better body spacing
-    styles["BodyText"].spaceAfter = 6
-    styles["BodyText"].leading = 18
-
-    # Code style
-    styles.add(
-        ParagraphStyle(
-            name="CustomCode",
-            fontName="Courier",
-            fontSize=9,
-            leading=12,
-            backColor=colors.lightgrey,
-            leftIndent=6,
-            rightIndent=6,
-            spaceBefore=6,
-            spaceAfter=6,
-        )
-    )
-
-    story = []
-
-    # Title
-    story.append(
-        Paragraph("Study Script", styles["Title"])
-    )
-
-    story.append(Spacer(1, 20))
-
-    # Convert markdown into flowables
-    story.extend(
-        markdown_to_flowables(text, styles, doc)
-    )
-
-    try:
-        doc.build(story)
-
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to build PDF: {exc}"
-        ) from exc
-
-    return file_path
-
 
 class SectionSchema(BaseModel):
     title: str = Field(
@@ -282,3 +21,173 @@ class PlannerSchema(BaseModel):
         description="Ordered list containing all sections of the study script outline.",
         min_length=3
     )
+
+def _generate_file_path(output_dir="outputs"):
+    os.makedirs(output_dir, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id = uuid.uuid4().hex[:6]
+
+    return os.path.join(output_dir, f"study_script_{timestamp}_{unique_id}.pdf")
+
+def create_pdf(markdown_text: str) -> str:
+    """
+    Converts Markdown -> HTML -> PDF using WeasyPrint.
+    """
+
+    file_path = _generate_file_path()
+
+    # -----------------------------
+    # Markdown -> HTML
+    # -----------------------------
+
+    html_content = markdown.markdown(
+        markdown_text,
+        extensions=[
+            "tables",
+            "fenced_code",
+            "toc",
+        ]
+    )
+
+    # -----------------------------
+    # HTML Template
+    # -----------------------------
+
+    full_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+
+        <style>
+
+            @page {{
+                size: A4;
+                margin: 25mm;
+            }}
+
+            body {{
+                font-family: Arial, sans-serif;
+                line-height: 1.7;
+                color: #222;
+                font-size: 12pt;
+            }}
+
+            h1 {{
+                font-size: 28px;
+                color: #1e3a8a;
+                margin-top: 32px;
+                margin-bottom: 16px;
+                border-bottom: 2px solid #1e3a8a;
+                padding-bottom: 8px;
+            }}
+
+            h2 {{
+                font-size: 22px;
+                color: #1e40af;
+                margin-top: 28px;
+                margin-bottom: 12px;
+            }}
+
+            h3 {{
+                font-size: 18px;
+                margin-top: 24px;
+                margin-bottom: 10px;
+            }}
+
+            p {{
+                margin: 10px 0;
+            }}
+
+            ul, ol {{
+                margin: 10px 0 10px 24px;
+            }}
+
+            li {{
+                margin-bottom: 6px;
+            }}
+
+            code {{
+                background-color: #f4f4f4;
+                padding: 2px 5px;
+                border-radius: 4px;
+                font-family: Consolas, monospace;
+                font-size: 0.95em;
+            }}
+
+            pre {{
+                background-color: #f4f4f4;
+                padding: 14px;
+                border-radius: 8px;
+                overflow-x: auto;
+                margin: 16px 0;
+            }}
+
+            pre code {{
+                background: none;
+                padding: 0;
+            }}
+
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+                font-size: 11pt;
+            }}
+
+            th {{
+                background-color: #1e3a8a;
+                color: white;
+                padding: 10px;
+                border: 1px solid #d1d5db;
+                text-align: left;
+            }}
+
+            td {{
+                padding: 10px;
+                border: 1px solid #d1d5db;
+                vertical-align: top;
+            }}
+
+            tr:nth-child(even) {{
+                background-color: #f9fafb;
+            }}
+
+            blockquote {{
+                border-left: 4px solid #d1d5db;
+                padding-left: 16px;
+                color: #555;
+                margin: 16px 0;
+            }}
+
+            img {{
+                max-width: 100%;
+            }}
+
+            hr {{
+                border: none;
+                border-top: 1px solid #ccc;
+                margin: 30px 0;
+            }}
+
+        </style>
+    </head>
+
+    <body>
+
+        <h1>Study Script</h1>
+
+        {html_content}
+
+    </body>
+    </html>
+    """
+
+    # -----------------------------
+    # HTML -> PDF
+    # -----------------------------
+
+    HTML(string=full_html).write_pdf(file_path)
+
+    return file_path
