@@ -3,7 +3,6 @@ from langgraph.graph import StateGraph, END
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from langchain_core.messages import SystemMessage
-from src.multi_agent.researcher.graph import ResearcherAgent
 from src.multi_agent.notes_generator.state import NotesGeneratorState
 from src.multi_agent.notes_generator.tools import PlannerSchema, create_pdf
 
@@ -14,14 +13,11 @@ class NotesGeneratorAgent:
         self.graph = None
         self.tools = None
         self.prompt_manager = PromptManager()
-        self.research_agent = ResearcherAgent()
 
-    async def initialize(self, research_graph):
+    async def initialize(self):
         """Async initialisation: connects MCP client and compiles the graph."""
         
         self.llm_factory = LLMFactory.get_instance()
-
-        self.research_graph = research_graph
 
         await self._build_graph()
 
@@ -96,8 +92,8 @@ class NotesGeneratorAgent:
             "notes_writer_prompt",
             idx = idx + 1,
             total = total,
-            section_title = current_section.title,
-            section_description = current_section.description,
+            section_title = current_section["title"],
+            section_description = current_section["description"],
             recent_content = recent_content if recent_content else "None yet.",
             research_data = state["research_data"]
         )
