@@ -1,3 +1,4 @@
+import operator
 from typing import Annotated, TypedDict
 from langgraph.graph import add_messages
 
@@ -17,4 +18,4 @@ class SupervisorState(TypedDict):
     
     current_task_idx: int = 0
     
-    research_data: str = ""
+    research_data: Annotated[list, operator.add] = []
