@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ScraplingServer": {
+      "transport": "stdio",
+      "command": "SCRAPLING_PATH",
+      "args": ["mcp"]
+    },
+    "pdf-reader": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["@sylphx/pdf-reader-mcp"]
+    }
+  }
+}

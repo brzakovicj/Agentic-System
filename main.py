@@ -21,7 +21,10 @@ def main():
 
     elif mode == "supervisor":
         #nest_asyncio.apply()
-        asyncio.run(multi_agent_main())
+        asyncio.run(multi_agent_main(mode))
+
+    elif mode == "orchestrator":
+        asyncio.run(multi_agent_main(mode))
 
     else:
         print(f"Unknown mode: {mode}")

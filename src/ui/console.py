@@ -4,6 +4,8 @@ from langgraph.types import RunnableConfig
 from rich.console import Console
 from rich.panel import Panel
 
+from src.scheduler_agent.orchestrator.graph import OrchestratorAgent
+from src.scheduler_agent.orchestrator.state import OrchestratorState
 from src.multi_agent.supervisor.state import SupervisorState
 from src.multi_agent.supervisor.graph import SupervisorAgent
 
@@ -159,7 +161,9 @@ async def stream_graph_responses(
     AGENT_STYLES = {
         'researcher': {'color': 'cyan', 'emoji': '🔬', 'name': 'Researcher'},
         'copywriter': {'color': 'magenta', 'emoji': '✍️', 'name': 'Copywriter'},
+        'scheduler': {'color': 'cyan', 'emoji': '🔬', 'name': 'Scheduler'},
         'supervisor': {'color': 'green', 'emoji': '🎯', 'name': 'Supervisor'},
+        'orchestrator': {'color': 'green', 'emoji': '🎯', 'name': 'Orchestrator'},
     }
 
     async for chunk in graph.astream(
@@ -178,6 +182,8 @@ async def stream_graph_responses(
                 agent_key = "researcher"
             elif "call_copywriter" in ns_str:
                 agent_key = "copywriter"
+            elif "call_scheduler" in ns_str:
+                agent_key = "scheduler"
             else:
                 agent_key = "researcher"
         else:
@@ -228,7 +234,7 @@ async def stream_graph_responses(
                     console.print(panel)
                     console.print()
 
-async def main():
+async def main(mode: str):
     """Main function to run the supervisor with subgraphs."""
     # Create console without fixed width - let it be responsive
     console = Console()
@@ -251,8 +257,12 @@ async def main():
         console.print(welcome_panel)
         console.print()  # Add spacing after welcome
 
-        supervisor = SupervisorAgent()
-        graph = await supervisor.build_graph()
+        if (mode == "supervisor"):
+            supervisor = SupervisorAgent()
+            graph = await supervisor.build_graph()
+        elif (mode == "orchestrator"):
+            orchestrator = OrchestratorAgent()
+            graph = await orchestrator.build_graph()
 
         while True:
             console.print()
@@ -262,11 +272,17 @@ async def main():
             if user_input.lower() in ["exit", "quit"]:
                 console.print("\n[yellow]Exit command received. Goodbye! 👋[/yellow]\n")
                 break
-
-            graph_input = SupervisorState(
-                messages = [ HumanMessage(content=user_input) ],
-                final_answer = False
-            )
+                
+            if (mode == "supervisor"):
+                graph_input = SupervisorState(
+                    messages = [ HumanMessage(content=user_input) ],
+                    final_answer = False
+                )
+            elif (mode == "orchestrator"):
+                graph_input = OrchestratorState(
+                    messages = [ HumanMessage(content=user_input) ],
+                    final_answer = False
+                )
 
             await stream_graph_responses(graph_input, graph, console, config = config)
 
