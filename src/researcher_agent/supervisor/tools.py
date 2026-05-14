@@ -1,5 +1,4 @@
 from langgraph.types import Command
-from pydantic import Field
 from typing import Annotated, List, Literal, TypedDict
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool, InjectedToolCallId

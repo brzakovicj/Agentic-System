@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 from dotenv import load_dotenv
 from langgraph.prebuilt import ToolNode
-from src.multi_agent.researcher_single_agent.state import ResearcherSingleAgentState
+from src.researcher_agent.researcher.state import ResearcherState
 from src.utils.mcp_client import MCPClient
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage
@@ -12,7 +12,7 @@ from src.utils.llm_factory import LLMFactory, ModelTier
 
 load_dotenv()
 
-class ResearcherSingleAgent:
+class ResearcherAgent:
     def __init__(self):
         self._graph = None
         self._prompt_manager = PromptManager()
@@ -46,32 +46,13 @@ class ResearcherSingleAgent:
         with open(config_path, "r") as f:
             return json.load(f)
 
-    def _stringify_content(self, content) -> str:
-        if content is None:
-            return ""
-
-        if isinstance(content, str):
-            return content
-
-        if isinstance(content, (dict, list)):
-            try:
-                return json.dumps(
-                    content,
-                    indent=2,
-                    ensure_ascii=False,
-                )
-            except Exception:
-                return str(content)
-
-        return str(content)
-
     ##############################################################################################
     # GRAPH BUILDING
     ##############################################################################################
 
     async def _build_graph(self):
         """Build the state graph for the ResearcherAgent."""
-        builder = StateGraph(ResearcherSingleAgentState)
+        builder = StateGraph(ResearcherState)
 
         builder.add_node("researcher", self.researcher_node)
         builder.add_node("tools", ToolNode(self._mcp_tools))
@@ -92,7 +73,7 @@ class ResearcherSingleAgent:
         # Don't use a checkpointer if using as a subgraph, the parent graph's checkpointer will be used
         self._graph = builder.compile()
 
-    async def router(self, state: ResearcherSingleAgentState) -> str:
+    async def router(self, state: ResearcherState) -> str:
         last_msg = state["messages"][-1]
 
         if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
@@ -104,7 +85,7 @@ class ResearcherSingleAgent:
     # GRAPH NODES
     ##############################################################################################
 
-    async def researcher_node(self, state: ResearcherSingleAgentState):
+    async def researcher_node(self, state: ResearcherState):
         """
             DOES EVERYTHING
         """
@@ -142,14 +123,9 @@ class ResearcherSingleAgent:
 
         print("\n-----------------------\n")
 
-        result = {
+        return {
             "messages": [response]
         }
-
-        if not getattr(response, "tool_calls", None):
-            result["final_answer"] = response.content
-
-        return result
 
 # Visualize the graph
 # from IPython.display import Image

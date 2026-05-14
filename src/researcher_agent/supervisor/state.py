@@ -2,7 +2,7 @@ import operator
 from typing import Annotated, TypedDict
 from langgraph.graph import add_messages
 
-from src.multi_agent.supervisor.tools import TaskSchema
+from src.researcher_agent.supervisor.tools import TaskSchema
 
 class SupervisorState(TypedDict):
     """

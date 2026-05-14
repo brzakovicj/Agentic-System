@@ -1,14 +1,14 @@
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
-from src.multi_agent.notes_generator_single_agent.state import NotesGeneratorSingleAgentState
+from src.researcher_agent.notes_generator.state import NotesGeneratorState
 from src.prompts.prompt_manager import PromptManager
-from src.utils.llm_factory import LLMFactory, ModelTier
+from src.utils.llm_factory import LLMFactory
 from langchain_core.messages import SystemMessage
-from src.multi_agent.notes_generator.tools import create_pdf
+from src.researcher_agent.notes_generator.tools import create_pdf
 
 load_dotenv()
 
-class NotesGeneratorSingleAgent:
+class NotesGeneratorAgent:
     def __init__(self):
         self.graph = None
         self.tools = None
@@ -28,7 +28,7 @@ class NotesGeneratorSingleAgent:
     # ------------------------------------------------------------------ #
 
     async def _build_graph(self):
-        builder = StateGraph(NotesGeneratorSingleAgentState)
+        builder = StateGraph(NotesGeneratorState)
 
         builder.add_node("agent", self.agent)
         builder.add_node("publisher", self.publisher)
@@ -45,7 +45,7 @@ class NotesGeneratorSingleAgent:
     #  Nodes                                                             #
     # ------------------------------------------------------------------ #
 
-    async def agent(self, state: NotesGeneratorSingleAgentState):
+    async def agent(self, state: NotesGeneratorState):
 
         llm = self.llm_factory.get_remote_llm()
 
@@ -60,7 +60,7 @@ class NotesGeneratorSingleAgent:
         # Build messages
         messages = [
             SystemMessage(content = prompt)
-        ]# + state["messages"]
+        ]
 
         try:
             response = await llm.ainvoke(messages)
@@ -79,7 +79,7 @@ class NotesGeneratorSingleAgent:
 
     # ------------------------------------------------------------------ #
 
-    async def publisher(self, state: NotesGeneratorSingleAgentState):
+    async def publisher(self, state: NotesGeneratorState):
         """Joins all written sections and renders them to a PDF."""
 
         full_text = state["messages"][-1].content

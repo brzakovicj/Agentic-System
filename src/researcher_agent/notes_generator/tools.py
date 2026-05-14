@@ -1,17 +1,8 @@
 import os
 import uuid
 import markdown
-from typing import List, TypedDict
 from weasyprint import HTML
 from datetime import datetime
-from pydantic import Field
-
-class SectionSchema(TypedDict):
-    title: str
-    description: str
-
-class PlannerSchema(TypedDict):
-    outline: List[SectionSchema]
 
 def _generate_file_path(output_dir="outputs"):
     os.makedirs(output_dir, exist_ok=True)
