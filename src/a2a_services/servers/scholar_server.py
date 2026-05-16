@@ -16,7 +16,7 @@ from a2a.types import (
 
 from starlette.applications import Starlette
 
-from src.a2a_services.executors.researcher_executor import ResearcherAgentExecutor
+from src.a2a_services.executors.scholar_executor import ScholarAgentExecutor
 from src.utils.llm_factory import LLMFactory
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -53,8 +53,8 @@ NOTES_GENERATION_SKILL = AgentSkill(
     ],
 )
 
-RESEARCHER_AGENT_CARD = AgentCard(
-    name="Researcher Service",
+SCHOLAR_AGENT_CARD = AgentCard(
+    name="Scholar Service",
     description=(
         "A specialised educational assistant service built with LangGraph. "
         "Provides two core capabilities: researching topics using users' course "
@@ -80,16 +80,16 @@ RESEARCHER_AGENT_CARD = AgentCard(
 # Server setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-def create_researcher_server():
+def create_scholar_server():
     """Build the A2A Starlette application."""
     request_handler = DefaultRequestHandler(
-        agent_executor=ResearcherAgentExecutor(),
+        agent_executor=ScholarAgentExecutor(),
         task_store=InMemoryTaskStore(),
-        agent_card=RESEARCHER_AGENT_CARD
+        agent_card=SCHOLAR_AGENT_CARD
     )
 
     routes = []
-    routes.extend(create_agent_card_routes(RESEARCHER_AGENT_CARD))
+    routes.extend(create_agent_card_routes(SCHOLAR_AGENT_CARD))
     routes.extend(create_jsonrpc_routes(request_handler, '/'))
 
     app = Starlette(routes=routes)
@@ -98,9 +98,9 @@ def create_researcher_server():
 
 
 if __name__ == "__main__":
-    print("[Researcher A2A Service] Starting on http://localhost:9001")
-    print("[Researcher A2A Service] Agent Card: "
+    print("[Scholar A2A Service] Starting on http://localhost:9001")
+    print("[Scholar A2A Service] Agent Card: "
           "http://localhost:9001/.well-known/agent-card.json")
-    print("[Researcher A2A Service] Press Ctrl+C to stop\n")
+    print("[Scholar A2A Service] Press Ctrl+C to stop\n")
     LLMFactory.initialize()
-    uvicorn.run(create_researcher_server(), host="0.0.0.0", port=9001, log_level="warning")
+    uvicorn.run(create_scholar_server(), host="0.0.0.0", port=9001)

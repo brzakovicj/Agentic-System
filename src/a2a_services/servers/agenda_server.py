@@ -16,7 +16,7 @@ from a2a.types import (
 
 from starlette.applications import Starlette
 
-from src.a2a_services.executors.scheduler_executor import SchedulerAgentExecutor
+from src.a2a_services.executors.agenda_executor import AgendaAgentExecutor
 from src.utils.llm_factory import LLMFactory
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -40,8 +40,8 @@ SCHEDULE_SKILL = AgentSkill(
     ],
 )
 
-SCHEDULER_AGENT_CARD = AgentCard(
-    name="Scheduler Service",
+AGENDA_AGENT_CARD = AgentCard(
+    name="Agenda Service",
     description=(
         "A specialised educational scheduling service built with LangGraph. "
         "Reads and interprets users' exam schedules and answers natural language "
@@ -66,16 +66,16 @@ SCHEDULER_AGENT_CARD = AgentCard(
 # Server setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-def create_scheduler_server():
+def create_agenda_server():
     """Build the A2A Starlette application."""
     request_handler = DefaultRequestHandler(
-        agent_executor=SchedulerAgentExecutor(),
+        agent_executor=AgendaAgentExecutor(),
         task_store=InMemoryTaskStore(),
-        agent_card=SCHEDULER_AGENT_CARD
+        agent_card=AGENDA_AGENT_CARD
     )
 
     routes = []
-    routes.extend(create_agent_card_routes(SCHEDULER_AGENT_CARD))
+    routes.extend(create_agent_card_routes(AGENDA_AGENT_CARD))
     routes.extend(create_jsonrpc_routes(request_handler, '/'))
 
     app = Starlette(routes=routes)
@@ -84,9 +84,9 @@ def create_scheduler_server():
 
 
 if __name__ == "__main__":
-    print("[Scheduler A2A Service] Starting on http://localhost:9002")
-    print("[Scheduler A2A Service] Agent Card: "
+    print("[Agenda A2A Service] Starting on http://localhost:9002")
+    print("[Agenda A2A Service] Agent Card: "
           "http://localhost:9002/.well-known/agent-card.json")
-    print("[Scheduler A2A Service] Press Ctrl+C to stop\n")
+    print("[Agenda A2A Service] Press Ctrl+C to stop\n")
     LLMFactory.initialize()
-    uvicorn.run(create_scheduler_server(), host="0.0.0.0", port=9002, log_level="warning")
+    uvicorn.run(create_agenda_server(), host="0.0.0.0", port=9002)

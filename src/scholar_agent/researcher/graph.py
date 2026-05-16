@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 from dotenv import load_dotenv
 from langgraph.prebuilt import ToolNode
-from src.researcher_agent.researcher.state import ResearcherState
+from src.scholar_agent.researcher.state import ResearcherState
 from src.utils.mcp_client import MCPClient
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage

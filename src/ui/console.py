@@ -4,17 +4,17 @@ from langgraph.types import RunnableConfig
 from rich.console import Console
 from rich.panel import Panel
 
-from src.scheduler_agent.orchestrator.graph import OrchestratorAgent
-from src.scheduler_agent.orchestrator.state import OrchestratorState
-from src.researcher_agent.supervisor.state import SupervisorState
-from src.researcher_agent.supervisor.graph import SupervisorAgent
+from src.agenda_agent.agenda.graph import AgendaAgent
+from src.agenda_agent.agenda.state import AgendaState
+from src.scholar_agent.scholar.state import ScholarState
+from src.scholar_agent.scholar.graph import ScholarAgent
 
 def get_responsive_width(console: Console) -> int:
     """Get responsive width with margins for panels."""
     return min(120, console.size.width - 4) if console.size.width > 10 else 80
 
 async def stream_graph_responses(
-    input: SupervisorState,
+    input: ScholarState,
     graph: StateGraph,
     console: Console,
     **kwargs
@@ -23,8 +23,8 @@ async def stream_graph_responses(
         'researcher': {'color': 'cyan', 'emoji': '🔬', 'name': 'Researcher'},
         'copywriter': {'color': 'magenta', 'emoji': '✍️', 'name': 'Copywriter'},
         'scheduler': {'color': 'cyan', 'emoji': '🔬', 'name': 'Scheduler'},
-        'supervisor': {'color': 'green', 'emoji': '🎯', 'name': 'Supervisor'},
-        'orchestrator': {'color': 'green', 'emoji': '🎯', 'name': 'Orchestrator'},
+        'scholar': {'color': 'green', 'emoji': '🎯', 'name': 'Scholar'},
+        'agenda': {'color': 'green', 'emoji': '🎯', 'name': 'Agenda'},
     }
 
     async for chunk in graph.astream(
@@ -48,7 +48,7 @@ async def stream_graph_responses(
             else:
                 agent_key = "researcher"
         else:
-            agent_key = "supervisor"
+            agent_key = "scholar"
 
         style = AGENT_STYLES[agent_key]
 
@@ -96,7 +96,7 @@ async def stream_graph_responses(
                     console.print()
 
 async def main(mode: str):
-    """Main function to run the supervisor with subgraphs."""
+    """Main function to run the scholar with subgraphs."""
     # Create console without fixed width - let it be responsive
     console = Console()
 
@@ -108,7 +108,7 @@ async def main(mode: str):
 
         # Welcome panel with responsive width
         welcome_panel = Panel(
-            "Multi-Agent Supervisor with Subgraphs\nType 'exit' or 'quit' to stop",
+            "Multi-Agent Scholar with Subgraphs\nType 'exit' or 'quit' to stop",
             title="🚀 AI Launchpad",
             border_style="blue",
             title_align="center",
@@ -118,12 +118,12 @@ async def main(mode: str):
         console.print(welcome_panel)
         console.print()  # Add spacing after welcome
 
-        if (mode == "supervisor"):
-            supervisor = SupervisorAgent()
-            graph = await supervisor.build_graph()
-        elif (mode == "orchestrator"):
-            orchestrator = OrchestratorAgent()
-            graph = await orchestrator.build_graph()
+        if (mode == "scholar"):
+            scholar = ScholarAgent()
+            graph = await scholar.build_graph()
+        elif (mode == "agenda"):
+            agenda = AgendaAgent()
+            graph = await agenda.build_graph()
 
         while True:
             console.print()
@@ -134,13 +134,13 @@ async def main(mode: str):
                 console.print("\n[yellow]Exit command received. Goodbye! 👋[/yellow]\n")
                 break
                 
-            if (mode == "supervisor"):
-                graph_input = SupervisorState(
+            if (mode == "scholar"):
+                graph_input = ScholarState(
                     messages = [ HumanMessage(content=user_input) ],
                     final_answer = False
                 )
-            elif (mode == "orchestrator"):
-                graph_input = OrchestratorState(
+            elif (mode == "agenda"):
+                graph_input = AgendaState(
                     messages = [ HumanMessage(content=user_input) ],
                     final_answer = False
                 )

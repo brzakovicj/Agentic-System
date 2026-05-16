@@ -1,10 +1,10 @@
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
-from src.researcher_agent.notes_generator.state import NotesGeneratorState
+from src.scholar_agent.notes_generator.state import NotesGeneratorState
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory
 from langchain_core.messages import SystemMessage
-from src.researcher_agent.notes_generator.tools import create_pdf
+from src.scholar_agent.notes_generator.tools import create_pdf
 
 load_dotenv()
 

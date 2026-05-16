@@ -7,7 +7,7 @@ from src.utils.llm_factory import LLMFactory
 
 def main():
     if len(sys.argv) < 2:
-        print("Defaulting to client mode. To specify mode, run with ['client', 'server' or 'supervisor'] argument.")
+        print("Defaulting to client mode. To specify mode, run with ['client', 'server' or 'scholar'] argument.")
         #nest_asyncio.apply()
         asyncio.run(multi_agent_main())
         return
@@ -19,11 +19,11 @@ def main():
     if mode == "server":
         mcp.run(transport="stdio")
 
-    elif mode == "supervisor":
+    elif mode == "scholar":
         #nest_asyncio.apply()
         asyncio.run(multi_agent_main(mode))
 
-    elif mode == "orchestrator":
+    elif mode == "agenda":
         asyncio.run(multi_agent_main(mode))
 
     else:

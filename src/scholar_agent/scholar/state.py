@@ -2,11 +2,11 @@ import operator
 from typing import Annotated, TypedDict
 from langgraph.graph import add_messages
 
-from src.researcher_agent.supervisor.tools import TaskSchema
+from src.scholar_agent.scholar.tools import TaskSchema
 
-class SupervisorState(TypedDict):
+class ScholarState(TypedDict):
     """
-        The state of the supervisor agent. 
+        The state of the scholar agent. 
     """
     messages: Annotated[list, add_messages] = []
 

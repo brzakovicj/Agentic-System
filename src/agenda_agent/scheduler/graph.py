@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
-from src.scheduler_agent.scheduler.state import SchedulerState
+from src.agenda_agent.scheduler.state import SchedulerState
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
