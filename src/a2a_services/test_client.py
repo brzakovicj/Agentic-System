@@ -1,92 +1,68 @@
-import httpx
 import asyncio
-
-from a2a.client import A2ACardResolver, ClientConfig, create_client
-from a2a.helpers import display_agent_card, new_text_message
-from a2a.types.a2a_pb2 import (
+import httpx
+from uuid import uuid4
+from a2a.client import create_client, ClientConfig
+from a2a.types import (
+    Message,
+    Part,
     Role,
     SendMessageRequest,
+    TaskState,
 )
-from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 
-
-async def main() -> None:
-    # --8<-- [start:A2ACardResolver]
-    scholar_base_url = 'http://127.0.0.1:9001'
-    agenda_base_url = 'http://127.0.0.1:9002'
-
-    async with httpx.AsyncClient() as httpx_client:
-        # Initialize A2ACardResolver
-        scholar_resolver = A2ACardResolver(
-            httpx_client=httpx_client,
-            base_url=scholar_base_url,
-            # agent_card_path uses default
+def build_send_request(content: str) -> SendMessageRequest:
+    return SendMessageRequest(
+        message=Message(
+            message_id=str(uuid4()),
+            role=Role.ROLE_USER,
+            parts=[Part(text=content)],
         )
-
-        agenda_resolver = A2ACardResolver(
-            httpx_client=httpx_client,
-            base_url=agenda_base_url,
-            # agent_card_path uses default
-        )
-
-        # --8<-- [end:A2ACardResolver]
-
-        #######################################################################
-
-        print(
-            f'Attempting to fetch public agent card from: {scholar_base_url}{AGENT_CARD_WELL_KNOWN_PATH}'
-        )
-        scholar_public_card = await scholar_resolver.get_agent_card()
-        print('\nSuccessfully fetched public agent card:')
-        display_agent_card(scholar_public_card)
-
-        print(
-            f'Attempting to fetch public agent card from: {agenda_base_url}{AGENT_CARD_WELL_KNOWN_PATH}'
-        )
-        agenda_public_card = await agenda_resolver.get_agent_card()
-        print('\nSuccessfully fetched public agent card:')
-        display_agent_card(agenda_public_card)
-
-    #######################################################################
-
-    print('\n--- SCHOLAR Streaming Call ---')
-    # --8<-- [start:message_stream]
-    streaming_config = ClientConfig(streaming=True)
-    scholar_streaming_client = await create_client(
-        agent=scholar_public_card, 
-        client_config=streaming_config
     )
-    print('\nStreaming Client initialized.')
 
-    message = new_text_message('Tell me something about Covid 19.', role=Role.ROLE_USER)
-    request = SendMessageRequest(message=message)
-    streaming_response = scholar_streaming_client.send_message(request)
+async def call_agent(base_url: str, question: str, label: str):
+    print(f'\n--- {label} ---')
 
-    async for chunk in streaming_response:
-        print('Response chunk:')
-        print(chunk)
-    # --8<-- [end:message_stream]
-
-    await scholar_streaming_client.close()
-
-    print('\n--- AGENDA Streaming Call ---')
-    streaming_config = ClientConfig(streaming=True)
-    agenda_streaming_client = await create_client(
-        agent=agenda_public_card, 
-        client_config=streaming_config
+    httpx_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
     )
-    print('\nStreaming Client initialized.')
 
-    message = new_text_message('When is the next Internet of Things exam?', role=Role.ROLE_USER)
-    request = SendMessageRequest(message=message)
-    streaming_response = agenda_streaming_client.send_message(request)
+    client = await create_client(
+        agent=base_url,
+        client_config=ClientConfig(httpx_client=httpx_client),
+    )
 
-    async for chunk in streaming_response:
-        print('Response chunk:')
-        print(chunk)
-    # --8<-- [end:message_stream]
+    try:
+        send_request = build_send_request(question)
 
-    await agenda_streaming_client.close()
+        async for chunk in client.send_message(send_request):
+            print(f'Chunk fields: {[f.name for f, _ in chunk.ListFields()]}')
+            print(f'Chunk: {chunk}')
+
+            for fd, val in chunk.ListFields():
+                if hasattr(val, 'parts'):
+                    for p in val.parts:
+                        if p.text:
+                            print(f'  >> {p.text}')
+                if hasattr(val, 'state'):
+                    if val.state in (
+                        TaskState.TASK_STATE_COMPLETED,
+                        TaskState.TASK_STATE_FAILED,
+                        TaskState.TASK_STATE_CANCELLED,
+                    ):
+                        print(f'  >> Završeno: {val.state}')
+                        return
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+    finally:
+        await client.close()
+        await httpx_client.aclose()
+
+
+async def main():
+    await call_agent('http://127.0.0.1:9001', 'Tell me something about Covid 19.', 'SCHOLAR')
+    await call_agent('http://127.0.0.1:9002', 'When is the next Internet of Things exam?', 'AGENDA')
 
 
 if __name__ == '__main__':

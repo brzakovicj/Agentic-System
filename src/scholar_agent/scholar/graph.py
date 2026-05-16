@@ -242,30 +242,32 @@ class ScholarAgent:
             # updates je dict: {node_name: {"messages": [...]}}
             for node_name, state_update in updates.items():
                 messages = state_update.get("messages", [])
+                is_final = state_update.get("final_answer", False)
 
                 for msg in messages:
                     if isinstance(msg, AIMessage):
-                        # Prikaži tool calls ako postoje
                         if msg.tool_calls:
                             for tc in msg.tool_calls:
-                                print(
-                                    f"  🔧 TOOL CALL [{node_name}]: "
-                                    f"{tc['name']}"
-                                )
-                                print(
-                                    f"{tc['args']}"
-                                )
+                                print(f"  🔧 TOOL CALL [{node_name}]: {tc['name']}")
+                                print(f"  {tc['args']}")
                             print()
-                            
+
                             yield {
                                 'is_task_complete': False,
                                 'require_user_input': False,
                                 'content': 'Calling tools...',
                             }
-                        
-                        if msg.content:
+
+                        elif is_final:
                             yield {
                                 'is_task_complete': True,
+                                'require_user_input': False,
+                                'content': msg.content.strip(),
+                            }
+
+                        elif msg.content:
+                            yield {
+                                'is_task_complete': False,
                                 'require_user_input': False,
                                 'content': msg.content.strip(),
                             }
@@ -276,11 +278,30 @@ class ScholarAgent:
                         )
                         print()
                         
-                        yield {
-                            'is_task_complete': False,
-                            'require_user_input': False,
-                            'content': 'Tool responded with results: \n' + msg.content,
-                        }
+                        if (isinstance(msg.content, list)):
+                            messages = msg.content
+                            msg_content = "\n\n".join(
+                                m.content for m in messages
+                                if hasattr(m, "content") and m.content
+                            )
+                            yield {
+                                'is_task_complete': False,
+                                'require_user_input': False,
+                                'content': 'Tool responded with results: \n' + msg_content,
+                            }
+                        else:
+                            yield {
+                                'is_task_complete': False,
+                                'require_user_input': False,
+                                'content': 'Tool responded with results: \n' + msg.content,
+                            }
+                
+                if is_final and not messages:
+                    yield {
+                        'is_task_complete': True,
+                        'require_user_input': False,
+                        'content': 'Task completed.',
+                    }
 
 # Visualize the graph
 # from IPython.display import Image

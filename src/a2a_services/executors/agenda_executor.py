@@ -1,62 +1,18 @@
-import sys
-from pathlib import Path
-
-from langchain.messages import AIMessage
-from langchain_core.messages import HumanMessage
-from langchain_core.runnables import RunnableConfig
-from uuid_utils import uuid4
-
-from src.agenda_agent.agenda.graph import AgendaAgent
-from src.agenda_agent.agenda.state import AgendaState
-
-# Ensure src/ is on path when running as script
-#sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
+from a2a.server.tasks import TaskUpdater
+from a2a.helpers import new_task_from_user_message
 from a2a.types import (
     InternalError,
     InvalidParamsError,
     Message,
     Part,
-    TaskState
+    Role,
+    TaskState,
 )
+from uuid_utils import uuid4
 
-from a2a.types.a2a_pb2 import ROLE_AGENT, TASK_STATE_INPUT_REQUIRED, TASK_STATE_WORKING
-
-from a2a.helpers import (
-    new_task_from_user_message
-)
-
-from a2a.server.tasks import TaskUpdater
-
-# def _extract_user_text(context: RequestContext) -> str:
-#     """
-#     Pull the plain-text content out of an A2A RequestContext.
- 
-#     A2A messages carry a list of Parts; we grab the first text part.
-#     """
-#     for part in context.message.parts or []:
-#         # SDK uses a union type – the text variant has a `.text` attribute
-#         if hasattr(part, "text") and part.text:
-#             return part.text
-#         # Some SDK versions wrap it in a `.root` discriminated union
-#         if hasattr(part, "root") and hasattr(part.root, "text"):
-#             return part.root.text
-#     return ""
- 
- 
-# def _collect_final_response(graph_state: dict) -> str:
-#     """
-#     Walk the final graph state and return the last non-empty AI message content.
-#     Falls back to a generic string if nothing useful is found.
-#     """
-#     messages = graph_state.get("messages", [])
-#     for msg in reversed(messages):
-#         if isinstance(msg, AIMessage) and msg.content:
-#             return msg.content
-#     return "Agent completed with no textual output."
- 
+from src.agenda_agent.agenda.graph import AgendaAgent
 
 class AgendaAgentExecutor(AgentExecutor):
     """
@@ -111,27 +67,23 @@ class AgendaAgentExecutor(AgentExecutor):
                 is_task_complete = item['is_task_complete']
                 require_user_input = item['require_user_input']
 
+                agent_message = Message(
+                    message_id=str(uuid4()),
+                    role=Role.ROLE_AGENT,
+                    parts=[Part(text=item['content'])],
+                    context_id=task.context_id,
+                    task_id=task.id,
+                )
+
                 if not is_task_complete and not require_user_input:
                     await updater.update_status(
-                        TASK_STATE_WORKING,
-                        message = Message(
-                            message_id=str(uuid4()),
-                            role=ROLE_AGENT,
-                            parts=[Part(text=item['content'])],
-                            context_id=task.context_id,
-                            task_id=task.id,
-                        ),
+                        TaskState.TASK_STATE_WORKING,
+                        message=agent_message,
                     )
                 elif require_user_input:
                     await updater.update_status(
-                        TASK_STATE_INPUT_REQUIRED,
-                        message = Message(
-                            message_id=str(uuid4()),
-                            role=ROLE_AGENT,
-                            parts=[Part(text=item['content'])],
-                            context_id=task.context_id,
-                            task_id=task.id,
-                        ),
+                        TaskState.TASK_STATE_INPUT_REQUIRED,
+                        message=agent_message,
                         final=True,
                     )
                     break
@@ -141,58 +93,16 @@ class AgendaAgentExecutor(AgentExecutor):
                         name='conversion_result',
                     )
                     await updater.complete()
+                    # await updater.complete(message=agent_message)
+                    # await updater.update_status(
+                    #     TaskState.TASK_STATE_COMPLETED,
+                    #     message=agent_message,
+                    #     final=True,
+                    # )
                     break
 
         except Exception as e:
             raise InternalError() from e
-
-
-        # await event_queue.enqueue_event(
-        #     TaskStatusUpdateEvent(
-        #         task_id = context.task_id,
-        #         context_id = context.context_id,
-        #         status = TaskStatus(
-        #             state = TaskState.TASK_STATE_WORKING,
-        #             message = new_text_message('Processing request...'),
-        #         ),
-        #     )
-        # )
-
-        # user_text = _extract_user_text(context)
-        # if not user_text:
-        #     user_text = "No query provided."
- 
-        # graph_input = self._state(
-        #     messages=[HumanMessage(content=user_text)],
-        #     final_answer=False,
-        # )
- 
-        # thread_id = context.context_id or context.task_id or "a2a-default"
-        # config = RunnableConfig(configurable={
-        #     "thread_id": thread_id,
-        #     "recursion_limit": 50,
-        # })
- 
-        # graph = await self._get_graph()
-        # final_state = await graph.ainvoke(input=graph_input, config=config)
-        # result_text = _collect_final_response(final_state)
-
-        # await event_queue.enqueue_event(
-        #     TaskArtifactUpdateEvent(
-        #         task_id = context.task_id,
-        #         context_id = context.context_id,
-        #         artifact = new_text_artifact(name='result', text=result_text),
-        #     )
-        # )
-        # await event_queue.enqueue_event(
-        #     TaskStatusUpdateEvent(
-        #         task_id = context.task_id,
-        #         context_id = context.context_id,
-        #         status = TaskStatus(
-        #             state = TaskState.TASK_STATE_COMPLETED
-        #         ),
-        #     )
-        # )
 
     def _validate_request(self, context: RequestContext) -> bool:
         return False

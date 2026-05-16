@@ -103,4 +103,4 @@ if __name__ == "__main__":
           "http://localhost:9001/.well-known/agent-card.json")
     print("[Scholar A2A Service] Press Ctrl+C to stop\n")
     LLMFactory.initialize()
-    uvicorn.run(create_scholar_server(), host="0.0.0.0", port=9001)
+    uvicorn.run(create_scholar_server(), host="127.0.0.1", port=9001)

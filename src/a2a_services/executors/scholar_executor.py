@@ -1,33 +1,18 @@
-import sys
-from pathlib import Path
-from uuid import uuid4
-
-from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.runnables import RunnableConfig
-
-from src.scholar_agent.scholar.graph import ScholarAgent
-from src.scholar_agent.scholar.state import ScholarState
-
-# Ensure src/ is on path when running as script
-# sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
+from a2a.server.tasks import TaskUpdater
+from a2a.helpers import new_task_from_user_message
 from a2a.types import (
     InternalError,
     InvalidParamsError,
     Message,
+    Part,
+    Role,
     TaskState,
-    Part
 )
+from uuid_utils import uuid4
 
-from a2a.types.a2a_pb2 import ROLE_AGENT, TASK_STATE_INPUT_REQUIRED, TASK_STATE_WORKING
-
-from a2a.helpers import (
-    new_task_from_user_message
-)
-
-from a2a.server.tasks import TaskUpdater
+from src.scholar_agent.scholar.graph import ScholarAgent
 
 class ScholarAgentExecutor(AgentExecutor):
     """
@@ -77,27 +62,23 @@ class ScholarAgentExecutor(AgentExecutor):
                 is_task_complete = item['is_task_complete']
                 require_user_input = item['require_user_input']
 
+                agent_message = Message(
+                    message_id=str(uuid4()),
+                    role=Role.ROLE_AGENT,
+                    parts=[Part(text=item['content'])],
+                    context_id=task.context_id,
+                    task_id=task.id,
+                )
+
                 if not is_task_complete and not require_user_input:
                     await updater.update_status(
-                        TASK_STATE_WORKING,
-                        message = Message(
-                            message_id=str(uuid4()),
-                            role=ROLE_AGENT,
-                            parts=[Part(text=item['content'])],
-                            context_id=task.context_id,
-                            task_id=task.id,
-                        )
+                        TaskState.TASK_STATE_WORKING,
+                        message=agent_message,
                     )
                 elif require_user_input:
                     await updater.update_status(
-                        TASK_STATE_INPUT_REQUIRED,
-                        message = Message(
-                            message_id=str(uuid4()),
-                            role=ROLE_AGENT,
-                            parts=[Part(text=item['content'])],
-                            context_id=task.context_id,
-                            task_id=task.id,
-                        ),
+                        TaskState.TASK_STATE_INPUT_REQUIRED,
+                        message=agent_message,
                         final=True,
                     )
                     break

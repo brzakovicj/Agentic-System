@@ -89,4 +89,4 @@ if __name__ == "__main__":
           "http://localhost:9002/.well-known/agent-card.json")
     print("[Agenda A2A Service] Press Ctrl+C to stop\n")
     LLMFactory.initialize()
-    uvicorn.run(create_agenda_server(), host="0.0.0.0", port=9002)
+    uvicorn.run(create_agenda_server(), host="127.0.0.1", port=9002)
