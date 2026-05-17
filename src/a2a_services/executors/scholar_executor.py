@@ -23,7 +23,8 @@ class ScholarAgentExecutor(AgentExecutor):
     """
 
     def __init__(self) -> None: 
-        self._agent = None  # built lazily
+        self._running_tasks: set[str] = set()
+        self._agent = None
 
     async def _build_graph(self):
         """Return the compiled graph, building it on first call."""
@@ -50,6 +51,7 @@ class ScholarAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
 
         updater = TaskUpdater(event_queue, task.id, task.context_id)
+        self._running_tasks.add(context.task_id)
 
         try:
             await self._build_graph()
@@ -83,6 +85,7 @@ class ScholarAgentExecutor(AgentExecutor):
                     )
                     break
                 else:
+                    self._running_tasks.remove(context.task_id)
                     await updater.add_artifact(
                         [Part(text=item['content'])],
                         name='conversion_result',
@@ -99,6 +102,15 @@ class ScholarAgentExecutor(AgentExecutor):
     async def cancel(
         self, context: RequestContext, event_queue: EventQueue
     ) -> None:
-        """Raise exception as cancel is not supported."""
-        raise Exception('cancel not supported')
+        """Cancels a task."""
+        task_id = context.task_id
+        if task_id in self._running_tasks:
+            self._running_tasks.remove(task_id)
+
+        updater = TaskUpdater(
+            event_queue=event_queue,
+            task_id=task_id or '',
+            context_id=context.context_id or '',
+        )
+        await updater.cancel()
     
