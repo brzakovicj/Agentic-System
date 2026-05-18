@@ -11,14 +11,10 @@ from a2a.types import (
     Role,
     SendMessageRequest,
     TaskState,
-    TaskPushNotificationConfig
+    TaskPushNotificationConfig,
+    TaskStatusUpdateEvent
 )
 from google.protobuf.json_format import MessageToDict
-from langchain_core.messages import SystemMessage
-import json
-
-from src.prompts.prompt_manager import PromptManager
-from src.utils.llm_factory import LLMFactory
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +241,6 @@ class A2A_Client:
                         "message_id": message_id,
                         "target_agent_url": target_agent_url,
                     }
-                
                 # --- Task kreiran ---
                 if event.HasField('task'):
                     task_data = MessageToDict(event.task, preserving_proto_field_name=True)
@@ -300,74 +295,7 @@ class A2A_Client:
                 "message_id": message_id,
                 "target_agent_url": target_agent_url,
             }
-
-###############################################################################
-# 'Tell me something about Covid 19.'
-# 'When is the next Internet of Things exam?'
-
-async def main() -> None:
-    """Run the A2A client."""
-    SCHOLAR_URL: str = "http://127.0.0.1:9001"
-    AGENDA_URL: str = "http://127.0.0.1:9002"
-    
-
-    client = A2A_Client(
-        known_agent_urls=[SCHOLAR_URL, AGENDA_URL],
-    )
-
-    llm_factory = LLMFactory.initialize()
-    llm = llm_factory.get_remote_llm()
-    prompt_manager = PromptManager()
-
-    result = await client.a2a_list_discovered_agents()
-
-    agent_cards = ""
-
-    if result["status"] == "success":
-        for agent in result["agents"]:
-            agent_cards += json.dumps(agent, indent=2) + "\n"
-
-    while True:
-        try:
-            loop = asyncio.get_running_loop()
-            user_input = await loop.run_in_executor(None, input, 'You: ')
-        except KeyboardInterrupt:
-            break
-
-        if user_input.lower() in ('quit', 'exit'):
-            break
-        if not user_input.strip():
-            continue
-
-        try:
-
-            prompt = prompt_manager.get(
-                "host_supervisor_prompt",
-                user_input=user_input,
-                agent_cards=agent_cards
-            )
-
-            response = await llm.ainvoke([SystemMessage(content = prompt)])
-
-            selected_agent = response.content.strip()
-
-            if selected_agent == "NONE":
-                print("No suitable agent found to handle the query.")
-                continue
-
-            if selected_agent not in (SCHOLAR_URL, AGENDA_URL):
-                print("Invalid agent returned by LLM.")
-                continue
-
-            message_id = str(uuid4())
-
-            await client.a2a_send_message(
-                message_text=user_input,
-                target_agent_url=selected_agent,
-                message_id=message_id,
-            )
-        except Exception as e:
-            print(f'Error communicating with agent: {e}')
-
-if __name__ == '__main__':
-    asyncio.run(main())
+        
+    async def close(self) -> None:
+        if self._httpx_client:
+            await self._httpx_client.aclose()

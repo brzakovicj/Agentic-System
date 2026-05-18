@@ -230,6 +230,8 @@ class ScholarAgent:
             "recursion_limit": 50,
         })
 
+        last_ai_content = ""
+
         async for item in self.graph.astream(
             input = state,
             stream_mode="updates",
@@ -259,6 +261,7 @@ class ScholarAgent:
                             }
 
                         elif is_final:
+                            last_ai_content = msg.content.strip()
                             yield {
                                 'is_task_complete': True,
                                 'require_user_input': False,
@@ -266,6 +269,7 @@ class ScholarAgent:
                             }
 
                         elif msg.content:
+                            last_ai_content = msg.content.strip()
                             yield {
                                 'is_task_complete': False,
                                 'require_user_input': False,
@@ -300,7 +304,7 @@ class ScholarAgent:
                     yield {
                         'is_task_complete': True,
                         'require_user_input': False,
-                        'content': 'Task completed.',
+                        'content': last_ai_content,
                     }
 
 # Visualize the graph

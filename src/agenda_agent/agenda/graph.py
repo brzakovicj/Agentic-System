@@ -192,6 +192,8 @@ class AgendaAgent:
             "recursion_limit": 50,
         })
 
+        last_ai_content = ""
+
         async for item in self._graph.astream(
             input = state,
             stream_mode="updates",
@@ -221,17 +223,19 @@ class AgendaAgent:
                             }
 
                         elif is_final:
+                            last_ai_content = msg.content.strip()
                             yield {
                                 'is_task_complete': True,
                                 'require_user_input': False,
-                                'content': msg.content.strip(),
+                                'content': last_ai_content,
                             }
 
                         elif msg.content:
+                            last_ai_content = msg.content.strip()
                             yield {
                                 'is_task_complete': False,
                                 'require_user_input': False,
-                                'content': msg.content.strip(),
+                                'content': last_ai_content,
                             }
 
                     elif isinstance(msg, ToolMessage):
@@ -262,7 +266,7 @@ class AgendaAgent:
                     yield {
                         'is_task_complete': True,
                         'require_user_input': False,
-                        'content': 'Task completed.',
+                        'content': last_ai_content,
                     }
 
 
