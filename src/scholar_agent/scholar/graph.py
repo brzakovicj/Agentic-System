@@ -250,7 +250,7 @@ class ScholarAgent:
                     if isinstance(msg, AIMessage):
                         if msg.tool_calls:
                             for tc in msg.tool_calls:
-                                print(f"  🔧 TOOL CALL [{node_name}]: {tc['name']}")
+                                print(f"  TOOL CALL [{node_name}]: {tc['name']}")
                                 print(f"  {tc['args']}")
                             print()
 
