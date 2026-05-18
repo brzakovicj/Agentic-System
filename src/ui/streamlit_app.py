@@ -134,7 +134,7 @@ if user_message:
             data = response.json()
 
             assistant_response = data["response"]
-            print(repr(assistant_response))
+            
             st.markdown(assistant_response)
 
         with st.container():

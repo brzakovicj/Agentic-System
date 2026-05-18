@@ -96,7 +96,7 @@ class ScholarAgent:
             "task_planner_prompt", 
             current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
             user_request = state["messages"][-1].content if state["messages"] else "None")
-        messages = [SystemMessage(content=prompt)] + state["messages"]
+        messages = [SystemMessage(content=prompt)]# + state["messages"]
 
         try:
             response = await llm.ainvoke(messages)
