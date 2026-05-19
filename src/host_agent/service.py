@@ -69,7 +69,7 @@ class HostAgentService:
                 agent_cards += json.dumps(agent, indent=2) + "\n"
 
         prompt = self.prompt_manager.get(
-            "host_supervisor_prompt",
+            "host_agent",
             user_input=user_input,
             agent_cards=agent_cards
         )

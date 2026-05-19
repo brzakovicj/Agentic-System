@@ -126,7 +126,7 @@ class ScholarAgent:
         )
 
         prompt = self.prompt_manager.get(
-            "task_planner_prompt", 
+            "planner_agent", 
             current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
             user_request = state["messages"][-1].content if state["messages"] else "None")
 
@@ -167,7 +167,7 @@ class ScholarAgent:
         )
 
         prompt = self.prompt_manager.get(
-            "supervisor",
+            "supervisor_agent",
             idx = idx + 1,
             total = total,
             task_name = current_task["name"],
@@ -206,7 +206,7 @@ class ScholarAgent:
         )
 
         prompt = self.prompt_manager.get(
-            "researcher_single_agent_prompt", 
+            "researcher_agent", 
             query = state["task_description"], 
             tools = tools_context, 
             current_datetime = datetime.now().strftime("%Y-%m-%d")
@@ -265,7 +265,7 @@ class ScholarAgent:
         research_data_str = "\n".join(state["research_data"])
 
         prompt = self.prompt_manager.get(
-            "notes_single_agent_prompt", 
+            "notes_agent", 
             search_query = state["task_description"], 
             research_data = research_data_str
         )
