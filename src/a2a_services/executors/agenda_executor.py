@@ -12,7 +12,7 @@ from a2a.types import (
 )
 from uuid_utils import uuid4
 
-from src.agenda_agent.agenda.graph import AgendaAgent
+from src.agenda_agent.graph import AgendaAgent
 
 class AgendaAgentExecutor(AgentExecutor):
     """
