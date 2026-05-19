@@ -2,7 +2,7 @@ import operator
 from typing import Annotated, TypedDict
 from langgraph.graph import add_messages
 
-from src.scholar_agent.scholar.tools import TaskSchema
+from src.scholar_agent.tools import TaskSchema
 
 class ScholarState(TypedDict):
     """
@@ -19,3 +19,7 @@ class ScholarState(TypedDict):
     current_task_idx: int = 0
     
     research_data: Annotated[list, operator.add] = []
+
+    researcher_messages: Annotated[list, add_messages] = []
+
+    notes_text: str | None = None

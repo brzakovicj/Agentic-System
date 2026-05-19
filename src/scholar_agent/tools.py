@@ -1,8 +1,49 @@
+from langgraph.types import Command
+from typing import Annotated, List, Literal, TypedDict
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import tool, InjectedToolCallId
+
 import os
 import uuid
 import markdown
 from weasyprint import HTML
 from datetime import datetime
+
+class TaskSchema(TypedDict):
+    name: str
+    description: str
+
+class PlannerTaskSchema(TypedDict):
+    plan: List[TaskSchema]
+
+@tool
+async def handoff_to_subagent(
+    agent_name: Literal["researcher", "notes"],
+    task_description: str,
+    tool_call_id: Annotated[str, InjectedToolCallId],
+    ):
+    """Assign a task to a sub-agent: researcher or notes.
+    
+    Args:
+        agent_name: The name of the agent to handoff the task to. Valid agent names are researcher and notes.
+        task_description: The description of the task to be completed.
+    """
+    update = {
+        "task_description": task_description,
+        "messages": [ToolMessage(
+            name=f"handoff_to_subagent",
+            content=f"Successfully handed off task to {agent_name}.",
+            tool_call_id=tool_call_id,
+        )],
+        }
+
+    return Command(
+        goto=f"{agent_name}_node",
+        update=update
+    )
+
+
+########### NOTES GENERATOR FUNCTIONS
 
 def _generate_file_path(output_dir="outputs"):
     os.makedirs(output_dir, exist_ok=True)

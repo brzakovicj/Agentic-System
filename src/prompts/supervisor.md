@@ -36,7 +36,7 @@ and routing it to the correct sub-agent.
 
 ---
 
-### notes_generator
+### notes
 
 **Use when the task requires:**
 
@@ -60,8 +60,8 @@ and routing it to the correct sub-agent.
 
 You have access to these tools:
 
-'$tools'
+$tools
 
 ---
 
-The current date and time is '$current_datetime'.
+The current date and time is $current_datetime.

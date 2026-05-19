@@ -1,18 +1,18 @@
+import os
+import json
+from datetime import datetime
+from dotenv import load_dotenv
 from typing import Any, AsyncIterable
-
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
-from datetime import datetime
-from dotenv import load_dotenv
 from langgraph.types import RunnableConfig
-from src.scholar_agent.researcher.graph import ResearcherAgent
-from src.scholar_agent.notes_generator.graph import NotesGeneratorAgent
-from src.scholar_agent.scholar.state import ScholarState
-from src.scholar_agent.scholar.tools import PlannerTaskSchema, handoff_to_subagent
+from src.scholar_agent.state import ScholarState
+from src.scholar_agent.tools import PlannerTaskSchema, create_pdf, handoff_to_subagent
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
+from src.utils.mcp_client import MCPClient
 
 from tenacity import RetryError
 
@@ -24,44 +24,68 @@ class ScholarAgent:
     def __init__(self):
         self.graph = None
         self.tools = None
-        self._prompt_manager = PromptManager()
+        self.prompt_manager = PromptManager()
         
         self.tools = [handoff_to_subagent]
 
-        self._llm_factory = LLMFactory.get_instance()
-        self.llm_with_tools = self._llm_factory.get_tool_llm(ModelTier.REMOTE, self.tools)
+        self.llm_factory = LLMFactory.get_instance()
+        self.llm_with_tools = self.llm_factory.get_tool_llm(ModelTier.REMOTE, self.tools)
 
-        self.research_agent = ResearcherAgent()
-        self.notes_generator = NotesGeneratorAgent()
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.mcp_dir = os.path.join(self.base_dir, "mcp")
+        self.mcp_config = self.get_config("config.json")
+
+        self.mcp_client = MCPClient(self.mcp_config)
 
     async def build_graph(self):
         """Kreira LangGraph."""
         builder = StateGraph(ScholarState)
 
-        self.research_graph = await self.research_agent.initialize()
-        self.notes_generator_graph = await self.notes_generator.initialize()
+        # MCP tools for researcher
+        self.mcp_tools = await self.mcp_client.get_tools()
+
+        # ----- NODES -----
 
         builder.add_node("planner", self.planner)
         builder.add_node("supervisor", self.supervisor)
-        builder.add_node("tools", ToolNode(self.tools))
-        builder.add_node(self.call_researcher)
-        builder.add_node("call_notes_generator",self.call_notes_generator)
+        builder.add_node("supervisor_tools", ToolNode(self.tools))
+
+        # Researcher
+        builder.add_node("researcher_node", self.researcher_node)
+        builder.add_node("researcher_tools", ToolNode(self.mcp_tools))
+        builder.add_node("researcher_done", self.researcher_done)
+        
+        # Notes generator
+        builder.add_node("notes_node", self.notes_node)
+        builder.add_node("notes_done", self.notes_done)
+
+        # ----- EDGES -----
 
         builder.set_entry_point("planner")
-
         builder.add_edge("planner", "supervisor")
 
         builder.add_conditional_edges(
             "supervisor",
             self.supervisor_router,
             {
-                "tools": "tools",
+                "tools": "supervisor_tools",
                 END: END,
             }
         )
 
-        builder.add_edge("call_researcher", "supervisor")
-        builder.add_edge("call_notes_generator", "supervisor")
+        builder.add_conditional_edges(
+            "researcher_node",
+            self.researcher_router,
+            {
+                "tools": "researcher_tools",
+                "end": "researcher_done",
+            }
+        )
+
+        builder.add_edge("researcher_tools", "researcher_node")
+        builder.add_edge("researcher_done", "supervisor")
+        builder.add_edge("notes_node", "notes_done")
+        builder.add_edge("notes_done", "supervisor")
 
         self.graph = builder.compile(checkpointer=MemorySaver())
 
@@ -79,27 +103,35 @@ class ScholarAgent:
         
         return END
     
+    ##############################################################################################
+    # HEPLER FUNCTIONS
+    ##############################################################################################
+
+    def get_config(self, config_name: str) -> dict:
+        """Utility function to load MCP tool configuration from a JSON file."""
+        config_path = os.path.join(self.mcp_dir, config_name)
+        
+        with open(config_path, "r") as f:
+            return json.load(f)
+    
     ###################################################################################
     # NODE FUNCTIONS
     ###################################################################################
 
     async def planner(self, state: ScholarState):
         """The planner agent, which breaks down the task into smaller sub-tasks."""
-        llm = self._llm_factory.get_llm_with_structured_output(
-            schema=PlannerTaskSchema, 
-            tier=ModelTier.REMOTE
+        llm = self.llm_factory.get_llm_with_structured_output(
+            schema = PlannerTaskSchema, 
+            tier = ModelTier.REMOTE
         )
 
-        # llm = self._llm_factory.get_remote_llm()
-
-        prompt = self._prompt_manager.get(
+        prompt = self.prompt_manager.get(
             "task_planner_prompt", 
-            current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+            current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
             user_request = state["messages"][-1].content if state["messages"] else "None")
-        messages = [SystemMessage(content=prompt)]# + state["messages"]
 
         try:
-            response = await llm.ainvoke(messages)
+            response = await llm.ainvoke([SystemMessage(content=prompt)])
 
             print("\n--- PLANNER NODE ---\n")
             print(response)
@@ -134,7 +166,7 @@ class ScholarAgent:
             if hasattr(m, "content") and m.content
         )
 
-        prompt = self._prompt_manager.get(
+        prompt = self.prompt_manager.get(
             "supervisor",
             idx = idx + 1,
             total = total,
@@ -162,59 +194,102 @@ class ScholarAgent:
             "current_task_idx": idx + 1,
         }
 
-    async def call_notes_generator(self, state: ScholarState, config: RunnableConfig):
-        """Call the notes generator agent.
+    ############################### RESEARCHER ####################################
+    
+    async def researcher_node(self, state: ScholarState):
+        """Researches a topic using MCP tools for RAG and Web search."""
+        llm = self.llm_factory.get_tool_llm(tier = ModelTier.REMOTE, tools = self.mcp_tools)
         
-        The agent is invoked with the task description generated by the supervisor, and any research reports that have been generated by the researcher.
-        """
-        notes_input = {
-            "messages": [HumanMessage(content=state["task_description"])],
-            "search_query": state["task_description"],
-            "research_data": state["research_data"] if state["research_data"] else "",
-            "pdf_path": "",
-        }
-
-        result = await self.notes_generator_graph.ainvoke(
-            input = notes_input,
-            config = config,
+        tools_context = "\n".join(
+            f"{tool.name}: {tool.description}"
+            for tool in self.mcp_tools
         )
 
-        pdf_path = result["pdf_path"] if result["pdf_path"] else "unknown location"
-
-        ai_message = AIMessage(
-            content=f"Study script generated successfully.\n Saved to: {pdf_path}"
+        prompt = self.prompt_manager.get(
+            "researcher_single_agent_prompt", 
+            query = state["task_description"], 
+            tools = tools_context, 
+            current_datetime = datetime.now().strftime("%Y-%m-%d")
         )
-
-        return {
-            "messages": [ai_message],
-        }
-
-    async def call_researcher(self, state: ScholarState, config: RunnableConfig):
-        """Call the researcher agent.
         
-        The agent is invoked with the task description generated by the supervisor, and any research reports that have been generated by the researcher.
-        """
-        research_response = await self.research_graph.ainvoke(
-            input={
-                "messages": [HumanMessage(content=state["task_description"])],
-                "query": state["task_description"],
-                },
-            config=config,
-        )
+        # Build messages
+        messages = [
+            SystemMessage(content = prompt)
+        ] + state["researcher_messages"]
 
+        try:
+            response = await llm.ainvoke(messages)
+        except Exception as e:
+            print(f"RESEARCHER: LLM call failed: {e}")
+            return {"researcher_messages": []}
+        
         print("\n--- RESEARCHER STATE ---\n")
-        print(type(research_response).__name__, getattr(research_response["messages"][-1], "content", ""))
-        if hasattr(research_response["messages"][-1], "tool_calls"):
-            print("TOOL CALLS:", research_response["messages"][-1].tool_calls)
+        print(type(response).__name__, getattr(response, "content", ""))
+        if hasattr(response, "tool_calls"):
+            print("TOOL CALLS:", response.tool_calls)
+
+        print("\n-----------------------\n")
+
+        return {
+            "researcher_messages": [response]
+        }
+    
+    async def researcher_router(self, state: ScholarState) -> str:
+        last_msg = state["researcher_messages"][-1]
+
+        if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+            return "tools"
+        
+        return "end"
+    
+    async def researcher_done(self, state: ScholarState):
+        """Collect the final researcher message into research_data, then return to supervisor."""
+        last_msg = state["researcher_messages"][-1]
+        content = last_msg.content if hasattr(last_msg, "content") else ""
 
         ai_message = AIMessage(
-            name="researcher", 
-            content=research_response['messages'][-1].content
+            name = "researcher",
+            content = content
         )
 
         return {
             "messages": [ai_message],
-            "research_data": [research_response['messages'][-1].content],
+            "research_data": [content],
+        }
+    
+    ############################### NOTES GENERATOR ####################################
+
+    async def notes_node(self, state: ScholarState):
+        llm = self.llm_factory.get_remote_llm()
+
+        research_data_str = "\n".join(state["research_data"])
+
+        prompt = self.prompt_manager.get(
+            "notes_single_agent_prompt", 
+            search_query = state["task_description"], 
+            research_data = research_data_str
+        )
+
+        try:
+            response = await llm.ainvoke([SystemMessage(content = prompt)])
+        except Exception as e:
+            print(f"NOTES GENERATOR: LLM call failed: {e}")
+            return {"notes_text": []}
+
+        return {
+            "notes_text": response.content
+        }
+
+    async def notes_done(self, state: ScholarState):
+        """Joins all written sections and renders them to a PDF."""
+
+        full_text = state["notes_text"]
+        file_path = create_pdf(full_text)
+
+        ai_message = AIMessage(content = f"Study script generated successfully.\n Saved to: {file_path}")
+
+        return {
+            "messages": [ai_message],
         }
 
     ############################### STREAM ####################################

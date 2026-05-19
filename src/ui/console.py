@@ -6,8 +6,8 @@ from rich.panel import Panel
 
 from src.agenda_agent.agenda.graph import AgendaAgent
 from src.agenda_agent.agenda.state import AgendaState
-from src.scholar_agent.scholar.state import ScholarState
-from src.scholar_agent.scholar.graph import ScholarAgent
+from src.scholar_agent.state import ScholarState
+from src.scholar_agent.graph import ScholarAgent
 
 def get_responsive_width(console: Console) -> int:
     """Get responsive width with margins for panels."""

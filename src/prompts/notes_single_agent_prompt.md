@@ -44,8 +44,6 @@ Follow these steps to address the task:
 - Output MUST be valid markdown.
 - Do not mention retrieval, tools, or source evaluation
 
-Target topic:
-'$search_query'
+Target topic: $search_query
 
-Research data:
-'$research_data'
+Research data: $research_data

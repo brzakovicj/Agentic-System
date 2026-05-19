@@ -12,7 +12,7 @@ from a2a.types import (
 )
 from uuid_utils import uuid4
 
-from src.scholar_agent.scholar.graph import ScholarAgent
+from src.scholar_agent.graph import ScholarAgent
 
 class ScholarAgentExecutor(AgentExecutor):
     """
