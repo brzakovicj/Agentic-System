@@ -4,8 +4,8 @@ from langgraph.types import RunnableConfig
 from rich.console import Console
 from rich.panel import Panel
 
-from src.agenda_agent.agenda.graph import AgendaAgent
-from src.agenda_agent.agenda.state import AgendaState
+from src.agenda_agent.graph import AgendaAgent
+from src.agenda_agent.state import AgendaState
 from src.scholar_agent.state import ScholarState
 from src.scholar_agent.graph import ScholarAgent
 

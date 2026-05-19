@@ -1,7 +1,7 @@
 import json
 from uuid import uuid4
 from langchain_core.messages import SystemMessage
-from src.a2a_services.test_client import A2A_Client
+from src.a2a_services.a2a_client import A2A_Client
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory
 
