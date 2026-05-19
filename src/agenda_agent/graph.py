@@ -109,7 +109,10 @@ class AgendaAgent:
                 }
             )
 
+        ai_message = AIMessage(content = f"Successfully initialized.")
+
         return {
+            "messages": [ai_message],
             "url": url,
         }
 
@@ -156,8 +159,7 @@ class AgendaAgent:
 
     async def astream(self, query, context_id) -> AsyncIterable[dict[str, Any]]:
         state = AgendaState(
-            messages = [ HumanMessage(content = query) ],
-            final_answer = False
+            messages = [ HumanMessage(content = query) ]
         )
 
         config = RunnableConfig(configurable={
@@ -166,72 +168,79 @@ class AgendaAgent:
         })
 
         last_ai_content = ""
+        completed_normally = False
 
-        async for item in self._graph.astream(
-            input = state,
-            stream_mode="updates",
-            subgraphs=True,
-            config = config
-        ):
-            # Sa subgraphs=True i "updates" struktura je: (namespace, {node_name: state_update})
-            namespace, updates = item
+        try:
+            async for item in self._graph.astream(
+                input = state,
+                stream_mode="updates",
+                config = config
+            ):
+                # updates je dict: {node_name: {"messages": [...]}}
+                for node_name, state_update in item.items():
+                    messages = state_update.get("messages", [])
 
-            # updates je dict: {node_name: {"messages": [...]}}
-            for node_name, state_update in updates.items():
-                messages = state_update.get("messages", [])
+                    for msg in messages:
+                        if isinstance(msg, AIMessage):
+                            if msg.tool_calls:
+                                for tc in msg.tool_calls:
+                                    print(f"  TOOL CALL [{node_name}]: {tc['name']}")
+                                    print(f"  {tc['args']}")
+                                print()
 
-                for msg in messages:
-                    if isinstance(msg, AIMessage):
-                        if msg.tool_calls:
-                            for tc in msg.tool_calls:
-                                print(f"  TOOL CALL [{node_name}]: {tc['name']}")
-                                print(f"  {tc['args']}")
-                            print()
+                                yield {
+                                    'is_task_complete': False,
+                                    'require_user_input': False,
+                                    'content': 'Calling tools...',
+                                }
 
-                            yield {
-                                'is_task_complete': False,
-                                'require_user_input': False,
-                                'content': 'Calling tools...',
-                            }
+                            elif msg.content:
+                                last_ai_content = msg.content.strip()
+                                yield {
+                                    'is_task_complete': False,
+                                    'require_user_input': False,
+                                    'content': last_ai_content,
+                                }
 
-                        elif msg.content:
-                            last_ai_content = msg.content.strip()
-                            yield {
-                                'is_task_complete': False,
-                                'require_user_input': False,
-                                'content': last_ai_content,
-                            }
-
-                    elif isinstance(msg, ToolMessage):
-                        print(
-                            f"[Tool result: {msg.name}]"
-                        )
-                        print()
-                        
-                        if (isinstance(msg.content, list)):
-                            messages = msg.content
-                            msg_content = "\n\n".join(
-                                m.content for m in messages
-                                if hasattr(m, "content") and m.content
+                        elif isinstance(msg, ToolMessage):
+                            print(
+                                f"[Tool result: {msg.name}]"
                             )
+                            print()
+                            
+                            if (isinstance(msg.content, list)):
+                                tool_parts = msg.content
+                                msg_content = "\n\n".join(
+                                    m.content for m in tool_parts
+                                    if hasattr(m, "content") and m.content
+                                )
+                            else:
+                                msg_content = msg.content
+                            
                             yield {
                                 'is_task_complete': False,
                                 'require_user_input': False,
                                 'content': 'Tool responded with results: \n' + msg_content,
                             }
-                        else:
-                            yield {
-                                'is_task_complete': False,
-                                'require_user_input': False,
-                                'content': 'Tool responded with results: \n' + msg.content,
-                            }
-                
-                if not messages:
-                    yield {
-                        'is_task_complete': True,
-                        'require_user_input': False,
-                        'content': last_ai_content,
-                    }
+
+            completed_normally = True
+
+        except Exception as exc:
+            print(f"Graph execution failed: {exc}")
+
+            yield {
+                "is_task_complete": True,
+                "require_user_input": False,
+                "content": f"Error: {str(exc)}",
+            }
+
+        finally:
+            if completed_normally:
+                yield {
+                    "is_task_complete": True,
+                    "require_user_input": False,
+                    "content": last_ai_content,
+                }
 
 
 #Visualize the graph

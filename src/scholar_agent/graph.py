@@ -52,7 +52,7 @@ class ScholarAgent:
 
         # Researcher
         builder.add_node("researcher_node", self.researcher_node)
-        builder.add_node("researcher_tools", ToolNode(self.mcp_tools))
+        builder.add_node("researcher_tools", ToolNode(self.mcp_tools, messages_key="researcher_messages"))
         builder.add_node("researcher_done", self.researcher_done)
         
         # Notes generator
@@ -68,7 +68,7 @@ class ScholarAgent:
             "supervisor",
             self.supervisor_router,
             {
-                "tools": "supervisor_tools",
+                "supervisor_tools": "supervisor_tools",
                 END: END,
             }
         )
@@ -77,8 +77,8 @@ class ScholarAgent:
             "researcher_node",
             self.researcher_router,
             {
-                "tools": "researcher_tools",
-                "end": "researcher_done",
+                "researcher_tools": "researcher_tools",
+                END: "researcher_done",
             }
         )
 
@@ -99,7 +99,7 @@ class ScholarAgent:
             return END
 
         if last_message.tool_calls:
-            return "tools"
+            return "supervisor_tools"
         
         return END
     
@@ -238,9 +238,9 @@ class ScholarAgent:
         last_msg = state["researcher_messages"][-1]
 
         if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-            return "tools"
+            return "researcher_tools"
         
-        return "end"
+        return END
     
     async def researcher_done(self, state: ScholarState):
         """Collect the final researcher message into research_data, then return to supervisor."""
@@ -310,14 +310,10 @@ class ScholarAgent:
         async for item in self.graph.astream(
             input = state,
             stream_mode="updates",
-            subgraphs=True,
             config = config
         ):
-            # Sa subgraphs=True i "updates" struktura je: (namespace, {node_name: state_update})
-            namespace, updates = item
-
             # updates je dict: {node_name: {"messages": [...]}}
-            for node_name, state_update in updates.items():
+            for node_name, state_update in item.items():
                 messages = state_update.get("messages", [])
                 is_final = state_update.get("final_answer", False)
 
@@ -340,7 +336,7 @@ class ScholarAgent:
                             yield {
                                 'is_task_complete': True,
                                 'require_user_input': False,
-                                'content': msg.content.strip(),
+                                'content': last_ai_content,
                             }
 
                         elif msg.content:
@@ -348,7 +344,7 @@ class ScholarAgent:
                             yield {
                                 'is_task_complete': False,
                                 'require_user_input': False,
-                                'content': msg.content.strip(),
+                                'content': last_ai_content,
                             }
 
                     elif isinstance(msg, ToolMessage):
@@ -358,22 +354,19 @@ class ScholarAgent:
                         print()
                         
                         if (isinstance(msg.content, list)):
-                            messages = msg.content
+                            tool_parts = msg.content
                             msg_content = "\n\n".join(
-                                m.content for m in messages
+                                m.content for m in tool_parts
                                 if hasattr(m, "content") and m.content
                             )
-                            yield {
-                                'is_task_complete': False,
-                                'require_user_input': False,
-                                'content': 'Tool responded with results: \n' + msg_content,
-                            }
                         else:
-                            yield {
-                                'is_task_complete': False,
-                                'require_user_input': False,
-                                'content': 'Tool responded with results: \n' + msg.content,
-                            }
+                            msg_content = msg.content
+                        
+                        yield {
+                            'is_task_complete': False,
+                            'require_user_input': False,
+                            'content': 'Tool responded with results: \n' + msg_content,
+                        }
                 
                 if is_final and not messages:
                     yield {
