@@ -20,14 +20,14 @@ load_dotenv()
 class AgendaAgent:
     def __init__(self):
         self._graph = None
-        self._mcp_tools_scheduler_node = None
+        self._mcp_tools_agenda_node = None
         self._prompt_manager = PromptManager()
         self._llm_factory = LLMFactory.get_instance()
 
         _base_dir = os.path.dirname(os.path.abspath(__file__))
         self._mcp_dir = os.path.join(_base_dir, "mcp")
-        self._scheduler_config = self._get_config("config.json")
-        self.mcp_client = MCPClient(self._scheduler_config)
+        self._agenda_config = self._get_config("config.json")
+        self.mcp_client = MCPClient(self._agenda_config)
 
     ##############################################################################################
     # HEPLER FUNCTIONS
@@ -55,36 +55,36 @@ class AgendaAgent:
     ##############################################################################################
 
     async def build_graph(self):
-        self._mcp_tools_scheduler_node = await self.mcp_client.get_tools()
+        self._mcp_tools_agenda_node = await self.mcp_client.get_tools()
 
         builder = StateGraph(AgendaState)
 
         # Nodes
         builder.add_node("initialize_node", self.initialize_node)
-        builder.add_node("scheduler_node", self.scheduler_node)
-        builder.add_node("scheduler_tools", ToolNode(self._mcp_tools_scheduler_node))
+        builder.add_node("agenda_node", self.agenda_node)
+        builder.add_node("agenda_tools", ToolNode(self._mcp_tools_agenda_node))
 
         # Edges
         builder.set_entry_point("initialize_node")
 
-        builder.add_edge("initialize_node", "scheduler_node")
+        builder.add_edge("initialize_node", "agenda_node")
 
         builder.add_conditional_edges(
-            "scheduler_node",
-            self.scheduler_router,
+            "agenda_node",
+            self._agenda_router,
             {
-                "tools": "scheduler_tools",
+                "tools": "agenda_tools",
                 END: END
             }
         )
 
-        builder.add_edge("scheduler_tools", "scheduler_node")
+        builder.add_edge("agenda_tools", "agenda_node")
 
         self._graph = builder.compile(checkpointer=MemorySaver())
 
         return self._graph
     
-    async def scheduler_router(self, state: AgendaState) -> str:
+    async def _agenda_router(self, state: AgendaState) -> str:
         last_msg = state["messages"][-1]
         
         if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
@@ -113,17 +113,17 @@ class AgendaAgent:
             "url": url,
         }
 
-    async def scheduler_node(self, state: AgendaState):
+    async def agenda_node(self, state: AgendaState):
         # LLM
-        llm = self._llm_factory.get_tool_llm(tier=ModelTier.REMOTE, tools=self._mcp_tools_scheduler_node)
+        llm = self._llm_factory.get_tool_llm(tier=ModelTier.REMOTE, tools=self._mcp_tools_agenda_node)
         
         tools_context = "\n".join(
             f"{tool.name}: {tool.description}"
-            for tool in self._mcp_tools_scheduler_node
+            for tool in self._mcp_tools_agenda_node
         )
 
         system_prompt = self._prompt_manager.get(
-            "scheduler_prompt",
+            "agenda_agent",
             tool_context=tools_context,
             url=state["url"] if state["url"] else "",
             current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -137,9 +137,9 @@ class AgendaAgent:
         try:
             response: AIMessage = await llm.ainvoke(messages + state["messages"])
         except Exception as exc:
-            print(f"Scheduler agent: {exc}")
+            print(f"Agenda agent: {exc}")
         
-        print("\n--- SCHEDULER NODE ---\n")
+        print("\n--- AGENDA NODE ---\n")
         print(type(response).__name__, getattr(response, "content", ""))
         if hasattr(response, "tool_calls"):
             print("TOOL CALLS:", response.tool_calls)
