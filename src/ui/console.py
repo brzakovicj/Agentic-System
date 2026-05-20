@@ -10,6 +10,8 @@ from src.documents_agent.graph import DocumentsAgent
 from src.documents_agent.state import DocumentsState
 from src.scholar_agent.state import ScholarState
 from src.scholar_agent.graph import ScholarAgent
+from src.study_plan_agent.graph import StudyPlanAgent
+from src.study_plan_agent.state import StudyPlanState
 
 def get_responsive_width(console: Console) -> int:
     """Get responsive width with margins for panels."""
@@ -126,6 +128,9 @@ async def main(mode: str):
         elif (mode == "agenda"):
             agenda = AgendaAgent()
             graph = await agenda.build_graph()
+        elif (mode == "study_plan"):
+            study_plan = StudyPlanAgent()
+            graph = await study_plan.build_graph()
         elif (mode == "documents"):
             documents = DocumentsAgent()
             graph = await documents.build_graph()
@@ -149,6 +154,11 @@ async def main(mode: str):
                     graph_input = AgendaState(
                         messages = [ HumanMessage(content=user_input) ],
                         final_answer = False
+                    )
+                elif (mode == "study_plan"):
+                    graph_input = StudyPlanState(
+                        messages=[HumanMessage(content=user_input)],
+                        user_input=user_input,
                     )
                 elif (mode == "documents"):
                     graph_input = DocumentsState(

@@ -11,7 +11,7 @@ You are fetching content from the following URL:
 
 ### 1. Read the Schedule
 
-- Fetch and parse the exam schedule from the provided URL.
+- Fetch the exam schedule from the provided URL.
 - Extract all available data: course names, dates, times, locations, durations, and any notes.
 - Today's date is: $current_datetime
 

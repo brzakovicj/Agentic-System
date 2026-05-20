@@ -128,26 +128,21 @@ class AgendaAgent:
         system_prompt = self._prompt_manager.get(
             "agenda_agent",
             tool_context=tools_context,
-            url=state["url"] if state["url"] else "",
+            url=state["url"] or "",
             current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
 
         # messages
-        messages = [
-            SystemMessage(content=system_prompt)
-        ]
+        messages = [SystemMessage(content=system_prompt)] + state["messages"]
     
         try:
-            response: AIMessage = await llm.ainvoke(messages + state["messages"])
+            response = await llm.ainvoke(messages)
         except Exception as exc:
             print(f"Agenda agent: {exc}")
-        
-        print("\n--- AGENDA NODE ---\n")
-        print(type(response).__name__, getattr(response, "content", ""))
-        if hasattr(response, "tool_calls"):
-            print("TOOL CALLS:", response.tool_calls)
 
-        print("\n-----------------------\n")
+            response = AIMessage(
+                content=f"Error occurred: {str(exc)}"
+            )
         
         return {
             "messages": [response]
@@ -159,13 +154,16 @@ class AgendaAgent:
 
     async def astream(self, query, context_id) -> AsyncIterable[dict[str, Any]]:
         state = AgendaState(
-            messages = [ HumanMessage(content = query) ]
+            messages = [ HumanMessage(content = query) ],
+            url = None
         )
 
-        config = RunnableConfig(configurable={
-            "thread_id": context_id,
-            "recursion_limit": 50,
-        })
+        config = RunnableConfig(
+            recursion_limit=50,
+            configurable={
+                "thread_id": context_id,
+            }
+        )
 
         last_ai_content = ""
         completed_normally = False
@@ -215,7 +213,7 @@ class AgendaAgent:
                                     if hasattr(m, "content") and m.content
                                 )
                             else:
-                                msg_content = msg.content
+                                msg_content = msg.content or "[Tool returned no content]"
                             
                             yield {
                                 'is_task_complete': False,

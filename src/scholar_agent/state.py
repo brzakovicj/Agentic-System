@@ -1,5 +1,5 @@
 import operator
-from typing import Annotated, TypedDict
+from typing import Annotated, NotRequired, TypedDict
 from langgraph.graph import add_messages
 
 from src.scholar_agent.tools import TaskSchema
@@ -8,18 +8,18 @@ class ScholarState(TypedDict):
     """
         The state of the scholar agent. 
     """
-    messages: Annotated[list, add_messages] = []
+    messages: Annotated[list, add_messages]
 
-    task_description: str | None = None
+    task_description: NotRequired[str | None]
     
-    final_answer: bool = False
+    final_answer: NotRequired[bool]
 
-    plan: list[TaskSchema] = []
+    plan: NotRequired[list[TaskSchema]]
     
-    current_task_idx: int = 0
+    current_task_idx: NotRequired[int]
     
-    research_data: Annotated[list, operator.add] = []
+    research_data: Annotated[list, operator.add]
 
-    researcher_messages: Annotated[list, add_messages] = []
+    researcher_messages: Annotated[list, add_messages]
 
-    notes_text: str | None = None
+    notes_text: NotRequired[str | None]

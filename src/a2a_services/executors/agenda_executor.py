@@ -90,7 +90,7 @@ class AgendaAgentExecutor(AgentExecutor):
                     )
                     break
                 else:
-                    self._running_tasks.remove(context.task_id)
+                    self._running_tasks.discard(task.id)
                     await updater.add_artifact(
                         [Part(text=item['content'])],
                         name='conversion_result',
@@ -108,13 +108,13 @@ class AgendaAgentExecutor(AgentExecutor):
         self, context: RequestContext, event_queue: EventQueue
     ) -> None:
         """Cancels a task."""
-        task_id = context.task_id
-        if task_id in self._running_tasks:
-            self._running_tasks.remove(task_id)
+        task = context.current_task
+        if task and task.id in self._running_tasks:
+            self._running_tasks.discard(task.id)
 
         updater = TaskUpdater(
             event_queue=event_queue,
-            task_id=task_id or '',
+            task_id=task.id or '',
             context_id=context.context_id or '',
         )
         await updater.cancel()

@@ -1,12 +1,11 @@
 import json
+import os
 from uuid import uuid4
+from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage
 from src.a2a_services.a2a_client import A2A_Client
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory
-
-SCHOLAR_URL = "http://127.0.0.1:9001"
-AGENDA_URL = "http://127.0.0.1:9002"
 
 CAPABILITIES_MESSAGE = """\
 ## 👋 Here's what I can help you with:
@@ -41,16 +40,19 @@ I wasn't able to route your request correctly. Here's what I *can* help you with
 **🧠 Topic Q&A** — *"Explain Newton's laws of motion"*
 """
 
+load_dotenv()
+
 class HostAgentService:
 
     def __init__(self):
 
-        self.client = A2A_Client(
-            known_agent_urls=[
-                SCHOLAR_URL,
-                AGENDA_URL
-            ]
-        )
+        self.agent_urls = [
+            os.getenv("SCHOLAR_URL"),
+            os.getenv("AGENDA_URL"),
+            os.getenv("STUDY_PLAN_URL"),
+        ]
+
+        self.client = A2A_Client(known_agent_urls=self.agent_urls)
 
         llm_factory = LLMFactory.initialize()
 
@@ -83,7 +85,7 @@ class HostAgentService:
         if selected_agent == "NONE":
             return CAPABILITIES_MESSAGE
         
-        if selected_agent not in (SCHOLAR_URL, AGENDA_URL):
+        if selected_agent not in self.agent_urls:
             return SOMETHING_WENT_WRONG_MESSAGE
 
         message_id = str(uuid4())

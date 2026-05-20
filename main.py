@@ -26,6 +26,9 @@ def main():
     elif mode == "agenda":
         asyncio.run(multi_agent_main(mode))
 
+    elif mode == "study_plan":
+        asyncio.run(multi_agent_main(mode))
+
     elif mode == "documents":
         asyncio.run(multi_agent_main(mode))
 

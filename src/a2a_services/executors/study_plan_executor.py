@@ -12,11 +12,11 @@ from a2a.types import (
 )
 from uuid_utils import uuid4
 
-from src.scholar_agent.graph import ScholarAgent
+from src.study_plan_agent.graph import StudyPlanAgent
 
-class ScholarAgentExecutor(AgentExecutor):
+class StudyPlanAgentExecutor(AgentExecutor):
     """
-    A2A executor for ScholarAgent.
+    A2A executor for StudyPlanAgent.
  
     The graph is built lazily on the first call so the constructor stays
     synchronous (A2A may instantiate executors without an event loop).
@@ -29,7 +29,7 @@ class ScholarAgentExecutor(AgentExecutor):
     async def _build_graph(self):
         """Return the compiled graph, building it on first call."""
         if self._agent is None:
-            self._agent = ScholarAgent()
+            self._agent = StudyPlanAgent()
             await self._agent.build_graph()
 
     async def execute(
@@ -51,7 +51,7 @@ class ScholarAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
 
         updater = TaskUpdater(event_queue, task.id, task.context_id)
-        self._running_tasks.add(task.id)
+        self._running_tasks.add(context.task_id)
 
         try:
             await self._build_graph()

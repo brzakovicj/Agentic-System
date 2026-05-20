@@ -241,33 +241,7 @@ class A2A_Client:
                         "message_id": message_id,
                         "target_agent_url": target_agent_url,
                     }
-                # --- Task kreiran ---
-                if event.HasField('task'):
-                    task_data = MessageToDict(event.task, preserving_proto_field_name=True)
-                    logger.info(f"Task data {task_data}")
-                
-                # --- Status update ---
-                elif event.HasField('status_update'):
-                    state = event.status_update.status.state
-                    state_name = TaskState.Name(state)
 
-                    if state_name in (
-                        'TASK_STATE_COMPLETED',
-                        'TASK_STATE_FAILED',
-                        'TASK_STATE_CANCELED',
-                        'TASK_STATE_REJECTED',
-                    ):
-                        return {
-                            "status": "success" if state_name == 'TASK_STATE_COMPLETED' else "error",
-                            "response": {
-                                "type": "status_update",
-                                "state": state_name,
-                                "data": MessageToDict(event.status_update, preserving_proto_field_name=True),
-                            },
-                            "message_id": message_id,
-                            "target_agent_url": target_agent_url,
-                        }
-                
                 # --- Artifact (finalni rezultat) ---
                 elif event.HasField('artifact_update'):
                     return {
@@ -279,7 +253,27 @@ class A2A_Client:
                         "message_id": message_id,
                         "target_agent_url": target_agent_url,
                     }
-                
+
+                # --- Status update ---
+                elif event.HasField('status_update'):
+                    state = event.status_update.status.state
+                    state_name = TaskState.Name(state)
+
+                    if state_name in (
+                        'TASK_STATE_FAILED',
+                        'TASK_STATE_CANCELED',
+                        'TASK_STATE_REJECTED',
+                    ):
+                        return {
+                            "status": "error",
+                            "response": {
+                                "type": "status_update",
+                                "state": state_name,
+                                "data": MessageToDict(event.status_update, preserving_proto_field_name=True),
+                            },
+                            "message_id": message_id,
+                            "target_agent_url": target_agent_url,
+                        }        
             return {
                 "status": "error",
                 "error": "No response received from agent",
