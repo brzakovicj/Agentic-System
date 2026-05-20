@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from src.mcp_servers.chromadb_server.server import mcp
+#from src.mcp_servers.chromadb_server.server import mcp
 from src.ui.console import main as multi_agent_main
 from src.utils.llm_factory import LLMFactory
 #import nest_asyncio
@@ -24,6 +24,9 @@ def main():
         asyncio.run(multi_agent_main(mode))
 
     elif mode == "agenda":
+        asyncio.run(multi_agent_main(mode))
+
+    elif mode == "documents":
         asyncio.run(multi_agent_main(mode))
 
     else:

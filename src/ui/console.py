@@ -6,6 +6,8 @@ from rich.panel import Panel
 
 from src.agenda_agent.graph import AgendaAgent
 from src.agenda_agent.state import AgendaState
+from src.documents_agent.graph import DocumentsAgent
+from src.documents_agent.state import DocumentsState
 from src.scholar_agent.state import ScholarState
 from src.scholar_agent.graph import ScholarAgent
 
@@ -124,28 +126,40 @@ async def main(mode: str):
         elif (mode == "agenda"):
             agenda = AgendaAgent()
             graph = await agenda.build_graph()
+        elif (mode == "documents"):
+            documents = DocumentsAgent()
+            graph = await documents.build_graph()
 
-        while True:
-            console.print()
-            user_input = console.input("[bold blue]User:[/bold blue] ")
-            console.print()  # Add spacing after user input
+        try:
+            while True:
+                console.print()
+                user_input = console.input("[bold blue]User:[/bold blue] ")
+                console.print()  # Add spacing after user input
 
-            if user_input.lower() in ["exit", "quit"]:
-                console.print("\n[yellow]Exit command received. Goodbye! 👋[/yellow]\n")
-                break
-                
-            if (mode == "scholar"):
-                graph_input = ScholarState(
-                    messages = [ HumanMessage(content=user_input) ],
-                    final_answer = False
-                )
-            elif (mode == "agenda"):
-                graph_input = AgendaState(
-                    messages = [ HumanMessage(content=user_input) ],
-                    final_answer = False
-                )
+                if user_input.lower() in ["exit", "quit"]:
+                    console.print("\n[yellow]Exit command received. Goodbye! 👋[/yellow]\n")
+                    break
+                    
+                if (mode == "scholar"):
+                    graph_input = ScholarState(
+                        messages = [ HumanMessage(content=user_input) ],
+                        final_answer = False
+                    )
+                elif (mode == "agenda"):
+                    graph_input = AgendaState(
+                        messages = [ HumanMessage(content=user_input) ],
+                        final_answer = False
+                    )
+                elif (mode == "documents"):
+                    graph_input = DocumentsState(
+                        messages = [ HumanMessage(content=user_input) ],
+                        user_query= user_input
+                    )
 
-            await stream_graph_responses(graph_input, graph, console, config = config)
+                await stream_graph_responses(graph_input, graph, console, config = config)
+        finally:
+            if mode == "documents":
+                await documents.close()
 
     except Exception as e:
         console.print(f"[red]Error: {type(e).__name__}: {str(e)}[/red]")

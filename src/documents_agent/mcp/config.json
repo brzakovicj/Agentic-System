@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "chromadb": {
+        "transport": "stdio",
+        "command": "python",
+        "args": [
+            "-m",
+            "src.mcp_servers.chromadb_server.server"
+        ]
+    }
+  }
+}
