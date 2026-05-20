@@ -20,6 +20,8 @@ class StudyPlanState(TypedDict):
     
     task_description: str | None = None
 
+    selected_agent: str | None = None
+
     scholar_data: Annotated[list, operator.add] = []
 
     agenda_data: Annotated[list, operator.add] = []

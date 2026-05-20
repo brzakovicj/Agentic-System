@@ -64,8 +64,7 @@ class StudyPlanAgent:
         # Nodes
         builder.add_node("study_plan_node", self.study_plan_node)
         builder.add_node("study_plan_tools", ToolNode(self._tools))
-        builder.add_node("scholar_agent", self.scholar_agent)
-        builder.add_node("agenda_agent", self.agenda_agent)
+        builder.add_node("execute_agent", self.execute_agent)
 
         # Edges
         builder.set_entry_point("study_plan_node")
@@ -79,8 +78,7 @@ class StudyPlanAgent:
             },
         )
 
-        builder.add_edge("scholar_agent", "study_plan_node")
-        builder.add_edge("agenda_agent", "study_plan_node")
+        builder.add_edge("execute_agent", "study_plan_node")
 
         self._graph = builder.compile(checkpointer=MemorySaver())
         return self._graph
@@ -95,103 +93,51 @@ class StudyPlanAgent:
     # NODES
     ##############################################################################################
 
-    async def scholar_agent(self, state: StudyPlanState):
+    async def execute_agent(self, state: StudyPlanState):
+        
+        selected_agent = state["selected_agent"] or ""
 
-        selected_agent = os.getenv("SCHOLAR_URL")
-
-        message_id = str(uuid4())
-
-        result = await self.a2a_client.a2a_send_message(
-            message_text=state["task_description"] if state["task_description"] else "",
-            target_agent_url=selected_agent,
-            message_id=message_id,
-        )
-
-        if result["status"] == "error":
+        if selected_agent == "":
             ai_message = AIMessage(
-                name = "scholar",
-                content = result['error']
+                name = "error",
+                content = "Agent is not selected."
             )
 
             return {
                 "messages": [ai_message],
+                "agenda_data": [],
                 "scholar_data": []
             }
-
-        response_data = result["response"]
-
-        # artifact
-        if response_data["type"] == "artifact":
-
-            artifact = response_data["data"]
-
-            parts = artifact.get("parts", [])
-
-            if parts:
-                content = parts[0].get("text", "No text response.")
-                
-                ai_message = AIMessage(
-                    name = "scholar",
-                    content = content
-                )
-
-                return {
-                    "messages": [ai_message],
-                    "scholar_data": [ai_message]
-                }
-
-        # direct message
-        if response_data["type"] == "message":
-
-            message = response_data["data"]
-
-            parts = message.get("parts", [])
-
-            if parts:
-                content = parts[0].get("text", "No text response.")
-
-                ai_message = AIMessage(
-                    name = "scholar",
-                    content = content
-                )
-
-                return {
-                    "messages": [ai_message],
-                    "scholar_data": [ai_message]
-                }
-
-        ai_message = AIMessage(
-            name = "scholar",
-            content = "No response received."
-        )
-
-        return {
-            "messages": [ai_message],
-            "scholar_data": [ai_message]
-        }
-
-    async def agenda_agent(self, state: StudyPlanState):
         
-        selected_agent = os.getenv("AGENDA_URL")
+        if selected_agent == "agenda":
+            selected_agent_url = os.getenv("AGENDA_URL")
+        elif selected_agent == "scholar":
+            selected_agent_url = os.getenv("SCHOLAR_URL")
 
         message_id = str(uuid4())
 
         result = await self.a2a_client.a2a_send_message(
             message_text=state["task_description"] if state["task_description"] else "",
-            target_agent_url=selected_agent,
+            target_agent_url=selected_agent_url,
             message_id=message_id,
         )
 
         if result["status"] == "error":
             ai_message = AIMessage(
-                name = "agenda",
+                name = selected_agent,
                 content = result['error']
             )
 
-            return {
-                "messages": [ai_message],
-                "agenda_data": []
-            }
+            if selected_agent == "agenda":
+                return {
+                    "messages": [ai_message],
+                    "agenda_data": []
+                }
+            elif selected_agent == "scholar":
+                return {
+                    "messages": [ai_message],
+                    "scholar_data": []
+                }
 
         response_data = result["response"]
 
@@ -206,14 +152,20 @@ class StudyPlanAgent:
                 content = parts[0].get("text", "No text response.")
                 
                 ai_message = AIMessage(
-                    name = "agenda",
+                    name = selected_agent,
                     content = content
                 )
 
-                return {
-                    "messages": [ai_message],
-                    "agenda_data": [ai_message]
-                }
+                if selected_agent == "agenda":
+                    return {
+                        "messages": [ai_message],
+                        "agenda_data": [ai_message]
+                    }
+                elif selected_agent == "scholar":
+                    return {
+                        "messages": [ai_message],
+                        "scholar_data": [ai_message]
+                    }
 
         # direct message
         if response_data["type"] == "message":
@@ -226,24 +178,36 @@ class StudyPlanAgent:
                 content = parts[0].get("text", "No text response.")
 
                 ai_message = AIMessage(
-                    name = "agenda",
+                    name = selected_agent,
                     content = content
                 )
 
-                return {
-                    "messages": [ai_message],
-                    "agenda_data": [ai_message]
-                }
+                if selected_agent == "agenda":
+                    return {
+                        "messages": [ai_message],
+                        "agenda_data": [ai_message]
+                    }
+                elif selected_agent == "scholar":
+                    return {
+                        "messages": [ai_message],
+                        "scholar_data": [ai_message]
+                    }
 
         ai_message = AIMessage(
-            name = "agenda",
+            name = selected_agent,
             content = "No response received."
         )
 
-        return {
-            "messages": [ai_message],
-            "agenda_data": [ai_message]
-        }
+        if selected_agent == "agenda":
+            return {
+                "messages": [ai_message],
+                "agenda_data": [ai_message]
+            }
+        elif selected_agent == "scholar":
+            return {
+                "messages": [ai_message],
+                "scholar_data": [ai_message]
+            }
 
     async def study_plan_node(self, state: StudyPlanState):
         llm = self._llm_factory.get_tool_llm(
