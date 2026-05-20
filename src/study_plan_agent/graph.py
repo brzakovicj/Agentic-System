@@ -26,10 +26,6 @@ class StudyPlanAgent:
         self._prompt_manager = PromptManager()
         self._llm_factory = LLMFactory.get_instance()
 
-        # _base_dir = os.path.dirname(os.path.abspath(__file__))
-        # self._mcp_dir = os.path.join(_base_dir, "mcp")
-        # self._config = self._get_config("config.json")
-
         self._tools = [handoff_to_agent]
 
         self.a2a_client = A2A_Client(
@@ -251,6 +247,10 @@ class StudyPlanAgent:
         state = StudyPlanState(
             messages=[HumanMessage(content=query)],
             user_input=query,
+            task_description=None,
+            selected_agent=None,
+            scholar_data=[],
+            agenda_data=[]
         )
 
         config = RunnableConfig(

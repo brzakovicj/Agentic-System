@@ -17,12 +17,6 @@ and routing it to the correct sub-agent.
 
 ---
 
-## Recent Context
-
-'$recent_messages'
-
----
-
 ## Available Sub-Agents
 
 ### researcher

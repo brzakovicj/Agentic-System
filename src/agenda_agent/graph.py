@@ -139,6 +139,10 @@ class AgendaAgent:
             response = await llm.ainvoke(messages)
         except Exception as exc:
             print(f"Agenda agent: {exc}")
+
+            response = AIMessage(
+                content=f"Error occurred: {str(exc)}"
+            )
         
         return {
             "messages": [response]
@@ -150,11 +154,12 @@ class AgendaAgent:
 
     async def astream(self, query, context_id) -> AsyncIterable[dict[str, Any]]:
         state = AgendaState(
-            messages = [ HumanMessage(content = query) ]
+            messages = [ HumanMessage(content = query) ],
+            url = None
         )
 
         config = RunnableConfig(
-            recursion_limit=10,
+            recursion_limit=50,
             configurable={
                 "thread_id": context_id,
             }

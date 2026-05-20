@@ -158,25 +158,18 @@ class ScholarAgent:
         total = len(plan)
         current_task = plan[idx]
 
-        # Provide only the two most recent messages as context to avoid
-        # inflating the prompt with the entire messages on every iteration.
-        recent = state["messages"][-2:] if state["messages"] else []
-        messages = "\n\n".join(
-            m.content for m in recent
-            if hasattr(m, "content") and m.content
-        )
-
         prompt = self.prompt_manager.get(
             "supervisor_agent",
             idx = idx + 1,
             total = total,
             task_name = current_task["name"],
-            task_description = current_task["description"],
-            recent_messages = messages if messages else "None yet.",
+            task_description = current_task["description"]
         )
 
+        messages = [SystemMessage(content = prompt)] + state["messages"]
+
         try:
-            response = await ainvoke_llm(self.llm_with_tools, [SystemMessage(content = prompt)])
+            response = await ainvoke_llm(self.llm_with_tools, messages)
         except RetryError as e:
             print("LLM call failed after all retries: %s", e.last_attempt.exception())
             raise
@@ -191,7 +184,6 @@ class ScholarAgent:
 
         return {
             "messages": [response],
-            "current_task_idx": idx + 1,
         }
 
     ############################### RESEARCHER ####################################
@@ -234,7 +226,7 @@ class ScholarAgent:
             "researcher_messages": [response]
         }
     
-    async def researcher_router(self, state: ScholarState) -> str:
+    def researcher_router(self, state: ScholarState) -> str:
         last_msg = state["researcher_messages"][-1]
 
         if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
@@ -255,6 +247,7 @@ class ScholarAgent:
         return {
             "messages": [ai_message],
             "research_data": [content],
+            "current_task_idx": state["current_task_idx"] + 1,
         }
     
     ############################### NOTES GENERATOR ####################################
@@ -290,92 +283,104 @@ class ScholarAgent:
 
         return {
             "messages": [ai_message],
+            "current_task_idx": state["current_task_idx"] + 1,
         }
 
     ############################### STREAM ####################################
     
     async def astream(self, query, context_id) -> AsyncIterable[dict[str, Any]]:
         state = ScholarState(
-            messages = [ HumanMessage(content = query) ],
-            final_answer = False
+            messages=[HumanMessage(content=query)],
+            final_answer=False,
+            plan=[],
+            current_task_idx=0,
+            research_data=[],
+            researcher_messages=[],
+            task_description=None,
+            notes_text=None,
         )
 
         config = RunnableConfig(
-            recursion_limit=10,
+            recursion_limit=50,
             configurable={
                 "thread_id": context_id,
             }
         )
 
         last_ai_content = ""
+        completed_normally = False
 
-        async for item in self.graph.astream(
-            input = state,
-            stream_mode="updates",
-            config = config
-        ):
-            # updates je dict: {node_name: {"messages": [...]}}
-            for node_name, state_update in item.items():
-                messages = state_update.get("messages", [])
-                is_final = state_update.get("final_answer", False)
+        try:
+            async for item in self.graph.astream(
+                input = state,
+                stream_mode="updates",
+                config = config
+            ):
+                # updates je dict: {node_name: {"messages": [...]}}
+                for node_name, state_update in item.items():
+                    messages = state_update.get("messages", [])
 
-                for msg in messages:
-                    if isinstance(msg, AIMessage):
-                        if msg.tool_calls:
-                            for tc in msg.tool_calls:
-                                print(f"  TOOL CALL [{node_name}]: {tc['name']}")
-                                print(f"  {tc['args']}")
-                            print()
+                    for msg in messages:
+                        if isinstance(msg, AIMessage):
+                            if msg.tool_calls:
+                                for tc in msg.tool_calls:
+                                    print(f"  TOOL CALL [{node_name}]: {tc['name']}")
+                                    print(f"  {tc['args']}")
+                                print()
 
-                            yield {
-                                'is_task_complete': False,
-                                'require_user_input': False,
-                                'content': 'Calling tools...',
-                            }
+                                yield {
+                                    'is_task_complete': False,
+                                    'require_user_input': False,
+                                    'content': 'Calling tools...',
+                                }
 
-                        elif is_final:
-                            last_ai_content = msg.content.strip()
-                            yield {
-                                'is_task_complete': True,
-                                'require_user_input': False,
-                                'content': last_ai_content,
-                            }
+                            elif msg.content:
+                                last_ai_content = msg.content.strip()
+                                yield {
+                                    'is_task_complete': False,
+                                    'require_user_input': False,
+                                    'content': last_ai_content,
+                                }
 
-                        elif msg.content:
-                            last_ai_content = msg.content.strip()
-                            yield {
-                                'is_task_complete': False,
-                                'require_user_input': False,
-                                'content': last_ai_content,
-                            }
-
-                    elif isinstance(msg, ToolMessage):
-                        print(
-                            f"[Tool result: {msg.name}]"
-                        )
-                        print()
-                        
-                        if (isinstance(msg.content, list)):
-                            tool_parts = msg.content
-                            msg_content = "\n\n".join(
-                                m.content for m in tool_parts
-                                if hasattr(m, "content") and m.content
+                        elif isinstance(msg, ToolMessage):
+                            print(
+                                f"[Tool result: {msg.name}]"
                             )
-                        else:
-                            msg_content = msg.content or "[Tool returned no content]"
-                        
-                        yield {
-                            'is_task_complete': False,
-                            'require_user_input': False,
-                            'content': 'Tool responded with results: \n' + msg_content,
-                        }
-                
-                if is_final and not messages:
-                    yield {
-                        'is_task_complete': True,
-                        'require_user_input': False,
-                        'content': last_ai_content,
-                    }
+                            print()
+                            
+                            if (isinstance(msg.content, list)):
+                                tool_parts = msg.content
+                                msg_content = "\n\n".join(
+                                    m.content for m in tool_parts
+                                    if hasattr(m, "content") and m.content
+                                )
+                            else:
+                                msg_content = msg.content or "[Tool returned no content]"
+                            
+                            yield {
+                                'is_task_complete': False,
+                                'require_user_input': False,
+                                'content': 'Tool responded with results: \n' + msg_content,
+                            }
+
+            completed_normally = True
+
+        except Exception as exc:
+            print(f"Graph execution failed: {exc}")
+
+            yield {
+                "is_task_complete": True,
+                "require_user_input": False,
+                "content": f"Error: {str(exc)}",
+            }
+
+        finally:
+            if completed_normally:
+                yield {
+                    "is_task_complete": True,
+                    "require_user_input": False,
+                    "content": last_ai_content,
+                }
 
 # Visualize the graph
 # from IPython.display import Image
