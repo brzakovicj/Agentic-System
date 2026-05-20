@@ -290,9 +290,9 @@ class StudyPlanAgent:
         )
 
         config = RunnableConfig(
+            recursion_limit=10,
             configurable={
                 "thread_id": context_id,
-                "recursion_limit": 50,
             }
         )
 
@@ -339,7 +339,7 @@ class StudyPlanAgent:
                                     if hasattr(m, "content") and m.content
                                 )
                             else:
-                                msg_content = msg.content
+                                msg_content = msg.content or "[Tool returned no content]"
 
                             yield {
                                 "is_task_complete": False,

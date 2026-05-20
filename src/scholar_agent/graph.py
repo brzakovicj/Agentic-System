@@ -300,10 +300,12 @@ class ScholarAgent:
             final_answer = False
         )
 
-        config = RunnableConfig(configurable={
-            "thread_id": context_id,
-            "recursion_limit": 50,
-        })
+        config = RunnableConfig(
+            recursion_limit=10,
+            configurable={
+                "thread_id": context_id,
+            }
+        )
 
         last_ai_content = ""
 
@@ -360,7 +362,7 @@ class ScholarAgent:
                                 if hasattr(m, "content") and m.content
                             )
                         else:
-                            msg_content = msg.content
+                            msg_content = msg.content or "[Tool returned no content]"
                         
                         yield {
                             'is_task_complete': False,
