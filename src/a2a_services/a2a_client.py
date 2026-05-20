@@ -290,6 +290,122 @@ class A2A_Client:
                 "target_agent_url": target_agent_url,
             }
         
+    async def a2a_send_message_stream(
+        self, message_text: str, target_agent_url: str, message_id: str | None = None
+    ):
+        """
+        Send a message to a specific A2A agent and stream all events as they arrive.
+ 
+        Za razliku od a2a_send_message (koja vraća prvi event i staje),
+        ova metoda je async generator koji yield-uje SVE evente redom:
+        working → ... → artifact/message/error
+ 
+        Yields:
+            dict sa istom strukturom kao a2a_send_message, ali za svaki event:
+                - status: "working" | "success" | "error"
+                - response: event data
+                - message_id
+                - target_agent_url
+        """
+        try:
+            await self._ensure_discovered_known_agents()
+ 
+            agent_card = await self._discover_agent_card(target_agent_url)
+            client_factory = await self._ensure_client_factory()
+            client = client_factory.create(agent_card)
+ 
+            if message_id is None:
+                message_id = str(uuid4())
+ 
+            message = Message(
+                message_id=message_id,
+                role=Role.ROLE_USER,
+                parts=[Part(text=message_text)],
+            )
+ 
+            request = SendMessageRequest(message=message)
+ 
+            logger.info(f"Streaming message to {target_agent_url}")
+ 
+            got_any_event = False
+ 
+            async for event in client.send_message(request):
+                got_any_event = True
+ 
+                # --- Direktna poruka ---
+                if event.HasField('message'):
+                    yield {
+                        "status": "success",
+                        "response": {
+                            "type": "message",
+                            "data": MessageToDict(event.message, preserving_proto_field_name=True),
+                        },
+                        "message_id": message_id,
+                        "target_agent_url": target_agent_url,
+                    }
+ 
+                # --- Artifact (finalni rezultat) ---
+                elif event.HasField('artifact_update'):
+                    yield {
+                        "status": "success",
+                        "response": {
+                            "type": "artifact",
+                            "data": MessageToDict(event.artifact_update.artifact, preserving_proto_field_name=True),
+                        },
+                        "message_id": message_id,
+                        "target_agent_url": target_agent_url,
+                    }
+ 
+                # --- Status update ---
+                elif event.HasField('status_update'):
+                    state = event.status_update.status.state
+                    state_name = TaskState.Name(state)
+ 
+                    if state_name in ('TASK_STATE_FAILED', 'TASK_STATE_CANCELED', 'TASK_STATE_REJECTED'):
+                        yield {
+                            "status": "error",
+                            "response": {
+                                "type": "status_update",
+                                "state": state_name,
+                                "data": MessageToDict(event.status_update, preserving_proto_field_name=True),
+                            },
+                            "message_id": message_id,
+                            "target_agent_url": target_agent_url,
+                        }
+                        return  # Terminalni event, nema smisla čekati dalje
+ 
+                    elif state_name == 'TASK_STATE_WORKING':
+                        yield {
+                            "status": "working",
+                            "response": {
+                                "type": "status_update",
+                                "state": state_name,
+                                "data": MessageToDict(event.status_update, preserving_proto_field_name=True),
+                            },
+                            "message_id": message_id,
+                            "target_agent_url": target_agent_url,
+                        }
+                        # Ne stajemo — čekamo sledeći event
+ 
+            if not got_any_event:
+                yield {
+                    "status": "error",
+                    "response": {"type": "empty", "data": {}},
+                    "error": "No response received from agent",
+                    "message_id": message_id,
+                    "target_agent_url": target_agent_url,
+                }
+ 
+        except Exception as e:
+            logger.exception(f"Error streaming message to {target_agent_url}")
+            yield {
+                "status": "error",
+                "response": {"type": "exception", "data": {}},
+                "error": str(e),
+                "message_id": message_id,
+                "target_agent_url": target_agent_url,
+            }
+        
     async def close(self) -> None:
         if self._httpx_client:
             await self._httpx_client.aclose()

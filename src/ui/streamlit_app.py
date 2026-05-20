@@ -1,9 +1,11 @@
+import json
 import streamlit as st
 from htbuilder.units import rem
 from htbuilder import div, styles
+import sseclient
 import requests
 
-API_URL = "http://127.0.0.1:8001/chat"
+API_URL = "http://127.0.0.1:8001/chat-stream"
 
 st.set_page_config(page_title="Study Buddy", page_icon="✨")
 
@@ -118,25 +120,68 @@ for i, message in enumerate(st.session_state.messages):
 # Nova poruka korisnika
 if user_message:
     user_message = user_message.replace("$", r"\$")
-
+ 
     with st.chat_message("user"):
         st.text(user_message)
-
+ 
     with st.chat_message("assistant"):
-        with st.spinner("Working on it..."):
-            response = requests.post(
-                API_URL,
-                json={
-                    "message": user_message
-                }
-            )
-
-            data = response.json()
-
-            assistant_response = data["response"]
-            
-            st.markdown(assistant_response)
-
-        with st.container():
-            st.session_state.messages.append({"role": "user", "content": user_message})
-            st.session_state.messages.append({"role": "assistant", "content": assistant_response})
+        placeholder = st.empty()
+        final_response = ""
+        error_occurred = False
+ 
+        try:
+            with st.spinner("Working on it..."):
+                response = requests.post(
+                    API_URL,
+                    json={"message": user_message},
+                    stream=True,
+                    timeout=120,  # 2 minuta maks. za duže zadatke
+                )
+                response.raise_for_status()
+ 
+                client = sseclient.SSEClient(response)
+ 
+                for event in client.events():
+                    data = json.loads(event.data)
+                    content = data.get("content", "")
+ 
+                    if event.event == "update":
+                        placeholder.info(content)
+ 
+                    elif event.event == "final":
+                        placeholder.empty()
+                        final_response = content
+ 
+                    elif event.event == "error":
+                        placeholder.empty()
+                        st.error(content)
+                        error_occurred = True
+                        break
+ 
+        except requests.exceptions.Timeout:
+            placeholder.empty()
+            st.error("The request timed out. Please try again.")
+            error_occurred = True
+ 
+        except requests.exceptions.ConnectionError:
+            placeholder.empty()
+            st.error("Could not connect to the backend. Is the server running?")
+            error_occurred = True
+ 
+        except requests.exceptions.HTTPError as e:
+            placeholder.empty()
+            st.error(f"Server error: {e.response.status_code}")
+            error_occurred = True
+ 
+        except Exception as e:
+            placeholder.empty()
+            st.error(f"Unexpected error: {e}")
+            error_occurred = True
+ 
+        if not error_occurred and final_response:
+            st.markdown(final_response)
+ 
+    if not error_occurred:
+        st.session_state.messages.append({"role": "user", "content": user_message})
+        if final_response:
+            st.session_state.messages.append({"role": "assistant", "content": final_response})

@@ -50,6 +50,7 @@ class HostAgentService:
             os.getenv("SCHOLAR_URL"),
             os.getenv("AGENDA_URL"),
             os.getenv("STUDY_PLAN_URL"),
+            os.getenv("DOCUMENTS_URL")
         ]
 
         self.client = A2A_Client(known_agent_urls=self.agent_urls)
@@ -124,3 +125,80 @@ class HostAgentService:
                 return parts[0].get("text", "No text response.")
 
         return "No response received."
+    
+    async def process_message_stream(self, user_input: str):
+
+        result = await self.client.a2a_list_discovered_agents()
+
+        agent_cards = ""
+        if result["status"] == "success":
+            for agent in result["agents"]:
+                agent_cards += json.dumps(agent, indent=2) + "\n"
+
+        prompt = self.prompt_manager.get(
+            "host_agent",
+            user_input=user_input,
+            agent_cards=agent_cards
+        )
+
+        response = await self.llm.ainvoke([
+            SystemMessage(content=prompt)
+        ])
+
+        selected_agent = response.content.strip()
+
+        if selected_agent == "NONE":
+            yield {
+                "type": "final",
+                "content": CAPABILITIES_MESSAGE
+            }
+            return
+
+        if selected_agent not in self.agent_urls:
+            yield {
+                "type": "final",
+                "content": SOMETHING_WENT_WRONG_MESSAGE
+            }
+            return
+
+        message_id = str(uuid4())
+
+        async for result in self.client.a2a_send_message_stream(
+            message_text=user_input,
+            target_agent_url=selected_agent,
+            message_id=message_id,
+        ):
+
+            # UPDATE
+            if result["status"] == "working":
+                update = result["response"]["data"]
+                message = update.get("message", {})
+                parts = message.get("parts", [])
+
+                if parts:
+                    yield {
+                        "type": "update",
+                        "content": parts[0].get("text", "Agent is working...")
+                    }
+
+            # FINAL
+            elif result["status"] in ["done", "completed", "success"]:
+                response_data = result["response"]
+
+                if response_data["type"] == "artifact":
+                    parts = response_data["data"].get("parts", [])
+                    if parts:
+                        yield {
+                            "type": "final",
+                            "content": parts[0]["text"]
+                        }
+
+                elif response_data["type"] == "message":
+                    parts = response_data["data"].get("parts", [])
+                    if parts:
+                        yield {
+                            "type": "final",
+                            "content": parts[0]["text"]
+                        }
+
+        return

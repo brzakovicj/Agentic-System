@@ -1,3 +1,17 @@
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("agent_agenda.log", mode="w")
+    ]
+)
+
+logger = logging.getLogger()
+logger.info("Agenda server starting...")  # confirms logging works and marks process start
+
 import uvicorn
 
 from a2a.server.request_handlers import DefaultRequestHandler

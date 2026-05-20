@@ -1,3 +1,17 @@
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("agent_study_plan.log", mode="w")
+    ]
+)
+
+logger = logging.getLogger()
+logger.info("Study plan server starting...")  # confirms logging works and marks process start
+
 import uvicorn
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import (

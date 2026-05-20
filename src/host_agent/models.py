@@ -1,7 +1,10 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     message: str
 
 class ChatResponse(BaseModel):
-    response: str
+    type: Optional[str] = None
+    content: Optional[str] = None
