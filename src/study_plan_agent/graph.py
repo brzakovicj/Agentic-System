@@ -99,11 +99,12 @@ class StudyPlanAgent:
                 content = "Agent is not selected."
             )
 
-            return {
+            yield {
                 "messages": [ai_message],
                 "agenda_data": [],
                 "scholar_data": []
             }
+            return
         
         if selected_agent == "agenda":
             selected_agent_url = os.getenv("AGENDA_URL")
@@ -112,98 +113,87 @@ class StudyPlanAgent:
 
         message_id = str(uuid4())
 
-        result = await self.a2a_client.a2a_send_message(
+        got_response = False
+        async for result in self.a2a_client.a2a_send_message_stream(
             message_text=state["task_description"] if state["task_description"] else "",
             target_agent_url=selected_agent_url,
             message_id=message_id,
-        )
+        ):
+            # ERROR
+            if result["status"] == "error":
+                ai_message = AIMessage(
+                    name = selected_agent,
+                    content = result['error']
+                )
 
-        if result["status"] == "error":
-            ai_message = AIMessage(
-                name = selected_agent,
-                content = result['error']
-            )
+                if selected_agent == "agenda":
+                    yield {
+                        "messages": [ai_message],
+                        "agenda_data": []
+                    }
+                elif selected_agent == "scholar":
+                    yield {
+                        "messages": [ai_message],
+                        "scholar_data": []
+                    }
+                return 
+            # FINAL
+            if result["status"] in ["done", "completed", "success"]:
+                response_data = result["response"]
 
-            if selected_agent == "agenda":
-                return {
-                    "messages": [ai_message],
-                    "agenda_data": []
-                }
-            elif selected_agent == "scholar":
-                return {
-                    "messages": [ai_message],
-                    "scholar_data": []
-                }
-
-        response_data = result["response"]
-
-        # artifact
-        if response_data["type"] == "artifact":
-
-            artifact = response_data["data"]
-
-            parts = artifact.get("parts", [])
-
-            if parts:
-                content = parts[0].get("text", "No text response.")
+                if response_data["type"] == "artifact":
+                    parts = response_data["data"].get("parts", [])
+                    if parts:
+                        content = parts[0].get("text", "No text response.")
                 
-                ai_message = AIMessage(
-                    name = selected_agent,
-                    content = content
-                )
+                        ai_message = AIMessage(
+                            name = selected_agent,
+                            content = content
+                        )
 
-                if selected_agent == "agenda":
-                    return {
-                        "messages": [ai_message],
-                        "agenda_data": [ai_message]
-                    }
-                elif selected_agent == "scholar":
-                    return {
-                        "messages": [ai_message],
-                        "scholar_data": [ai_message]
-                    }
+                        if selected_agent == "agenda":
+                            yield {
+                                "messages": [ai_message],
+                                "agenda_data": [ai_message]
+                            }
+                        elif selected_agent == "scholar":
+                            yield {
+                                "messages": [ai_message],
+                                "scholar_data": [ai_message]
+                            }
+                        got_response = True
 
-        # direct message
-        if response_data["type"] == "message":
+                elif response_data["type"] == "message":
+                    parts = response_data["data"].get("parts", [])
+                    if parts:
+                        content = parts[0].get("text", "No text response.")
 
-            message = response_data["data"]
+                        ai_message = AIMessage(
+                            name = selected_agent,
+                            content = content
+                        )
 
-            parts = message.get("parts", [])
+                        if selected_agent == "agenda":
+                            yield {
+                                "messages": [ai_message],
+                                "agenda_data": [ai_message]
+                            }
+                        elif selected_agent == "scholar":
+                            yield {
+                                "messages": [ai_message],
+                                "scholar_data": [ai_message]
+                            }
 
-            if parts:
-                content = parts[0].get("text", "No text response.")
-
-                ai_message = AIMessage(
-                    name = selected_agent,
-                    content = content
-                )
-
-                if selected_agent == "agenda":
-                    return {
-                        "messages": [ai_message],
-                        "agenda_data": [ai_message]
-                    }
-                elif selected_agent == "scholar":
-                    return {
-                        "messages": [ai_message],
-                        "scholar_data": [ai_message]
-                    }
-
-        ai_message = AIMessage(
-            name = selected_agent,
-            content = "No response received."
-        )
-
-        if selected_agent == "agenda":
-            return {
-                "messages": [ai_message],
-                "agenda_data": [ai_message]
-            }
-        elif selected_agent == "scholar":
-            return {
-                "messages": [ai_message],
-                "scholar_data": [ai_message]
-            }
+        if not got_response:
+            ai_message = AIMessage(
+                name=selected_agent, 
+                content="No response received."
+            )
+            
+            if selected_agent == "agenda":
+                yield {"messages": [ai_message], "agenda_data": [ai_message]}
+            elif selected_agent == "scholar":
+                yield {"messages": [ai_message], "scholar_data": [ai_message]}
 
     async def study_plan_node(self, state: StudyPlanState):
         llm = self._llm_factory.get_tool_llm(
