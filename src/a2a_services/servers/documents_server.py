@@ -29,7 +29,7 @@ from a2a.types import (
 
 from starlette.applications import Starlette
 
-from src.a2a_services.executors.documents_executor import DocumentsAgentExecutor
+from src.a2a_services.executors.agent_executor import DocumentsAgentExecutor
 from src.utils.llm_factory import LLMFactory
 
 # ─────────────────────────────────────────────────────────────────────────────

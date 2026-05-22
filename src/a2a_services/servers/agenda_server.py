@@ -30,7 +30,7 @@ from a2a.types import (
 
 from starlette.applications import Starlette
 
-from src.a2a_services.executors.agenda_executor import AgendaAgentExecutor
+from src.a2a_services.executors.agent_executor import AgendaAgentExecutor
 from src.utils.llm_factory import LLMFactory
 
 # ─────────────────────────────────────────────────────────────────────────────

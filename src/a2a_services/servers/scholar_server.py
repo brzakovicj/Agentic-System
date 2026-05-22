@@ -30,7 +30,7 @@ from a2a.types import (
 
 from starlette.applications import Starlette
 
-from src.a2a_services.executors.scholar_executor import ScholarAgentExecutor
+from src.a2a_services.executors.agent_executor import ScholarAgentExecutor
 from src.utils.llm_factory import LLMFactory
 
 # ─────────────────────────────────────────────────────────────────────────────

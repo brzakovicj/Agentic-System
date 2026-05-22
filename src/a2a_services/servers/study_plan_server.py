@@ -26,7 +26,7 @@ from a2a.types import (
     AgentSkill,
 )
 from starlette.applications import Starlette
-from src.a2a_services.executors.study_plan_executor import StudyPlanAgentExecutor
+from src.a2a_services.executors.agent_executor import StudyPlanAgentExecutor
 from src.utils.llm_factory import LLMFactory
 
 # ─────────────────────────────────────────────────────────────────────────────
