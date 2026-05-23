@@ -22,6 +22,12 @@ SUGGESTIONS = {
     ":violet[:material/calendar_month:] What's on my exam schedule?": (
         "What exams do I have coming up? Can you show me my exam schedule?"
     ),
+    ":orange[:material/event_note:] Create a study plan": (
+        "Can you create a study plan for my upcoming Internet of Things exam based on my exam schedule?"
+    ),
+    ":cyan[:material/folder:] Manage my document database": (
+        "List all documents currently in the database."
+    ),
     ":red[:material/tips_and_updates:] How can you help me study?": (
         "What can you do to help me study? Walk me through all your capabilities."
     ),
@@ -38,7 +44,9 @@ def show_disclaimer_dialog():
         - 🔍 **Research** — I can search the web and gather information on any topic you need to study\n
         - 📝 **Study Notes** — I'll research a topic and generate clean, structured notes you can review\n
         - 📅 **Exam Schedule** — Ask me about your upcoming exams and I'll pull up your schedule\n
-        - 🧠 **Q&A** — Ask me anything about your subjects and I'll give you a thorough answer\n\n
+        - 🗓️ **Study Plan Generation** — I can create personalized study plans based on your exam schedule and deadlines\n
+        - 🧠 **Q&A** — Ask me anything about your subjects and I'll give you a thorough answer\n
+        - 🗂️ **Document Database Management** — You can list documents, ingest new files, delete documents, or reset the database\n\n
         Under the hood, specialized agents work together to handle each task — so you always get the right tool for the job. 
     """)
 

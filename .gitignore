@@ -219,3 +219,5 @@ __marimo__/
 
 # ChromaDB
 chroma/
+
+file_registry.db

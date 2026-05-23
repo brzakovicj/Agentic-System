@@ -97,10 +97,6 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
         if error:
             raise InvalidParamsError()
         
-        query = context.get_user_input()
-        if not query:
-            raise InvalidParamsError()
-        
         task = context.current_task
         if not task:
             task = new_task_from_user_message(context.message)
@@ -116,7 +112,7 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
             agent = await self._get_agent()
 
             async for item in agent.astream(
-                query = query, 
+                query = context.get_user_input(), 
                 context_id = context_id
             ):
                 is_task_complete = item['is_task_complete']

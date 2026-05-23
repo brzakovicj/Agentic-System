@@ -22,9 +22,20 @@ I'll research a topic and generate clean, structured notes ready for revision.
 Ask about your upcoming exams and I'll pull up your schedule.
 > *"What exams do I have this week?"*
 
+**🗓️ Study Plan Generation**
+I can generate personalized study plans based on your exam schedule and deadlines.
+> *"Create a study plan for my upcoming Database 2 exam"*
+
 **🧠 Topic Q&A**
 Ask any question about your subjects and I'll give you a thorough answer.
 > *"Explain how mitosis works"*
+
+**🗂️ Document Database Management**
+You can manage the document database — list files, ingest new documents, delete files, or reset the database.
+> *"List all documents in the database"*
+> *"Delete lecture_notes.pdf"*
+> *"Ingest new files"*
+> *"Reset the database"*
 
 ---
 *Try rephrasing your question, or pick one of the options above!*"""
@@ -37,7 +48,13 @@ I wasn't able to route your request correctly. Here's what I *can* help you with
 **🔍 Research** — *"Research quantum computing for me"*
 **📝 Study Notes** — *"Generate study notes on the French Revolution"*
 **📅 Exam Schedule** — *"What exams do I have coming up?"*
+**🗓️ Study Plan Generation** — *"Create a study plan for Internet of Things exam based on my exam schedule"*
 **🧠 Topic Q&A** — *"Explain Newton's laws of motion"*
+**🗂️ Document Database Management**
+- *"List all documents in the database"*
+- *"Delete biology_notes.pdf"*
+- *"Ingest new files"*
+- *"Reset the database"*
 """
 
 load_dotenv()
