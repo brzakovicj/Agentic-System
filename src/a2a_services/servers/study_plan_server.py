@@ -100,9 +100,9 @@ def create_study_plan_server():
 
 
 if __name__ == "__main__":
-    print("[Study Plan A2A Service] Starting on http://localhost:9003")
-    print("[Study Plan A2A Service] Agent Card: "
+    logger.info("[Study Plan A2A Service] Starting on http://localhost:9003")
+    logger.info("[Study Plan A2A Service] Agent Card: "
           "http://localhost:9003/.well-known/agent-card.json")
-    print("[Study Plan A2A Service] Press Ctrl+C to stop\n")
+    logger.info("[Study Plan A2A Service] Press Ctrl+C to stop\n")
     LLMFactory.initialize()
     uvicorn.run(create_study_plan_server(), host="127.0.0.1", port=9003)

@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 from typing import Any, AsyncIterable
@@ -17,6 +18,8 @@ from src.utils.mcp_client import MCPClient
 from tenacity import RetryError
 
 from src.utils.retryable_invoke import ainvoke_llm
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -133,16 +136,12 @@ class ScholarAgent:
         try:
             response = await llm.ainvoke([SystemMessage(content=prompt)])
 
-            print("\n--- PLANNER NODE ---\n")
-            print(response)
-            print("\n-----------------------\n")
-
             return {
                 "plan": response["plan"],
                 "current_task_idx": 0,
             }
         except Exception as e:
-            print(f"Error in planner node: {e}")
+            logger.error(f"Error in planner node: {e}")
             raise
     
     async def supervisor(self, state: ScholarState):
@@ -171,16 +170,11 @@ class ScholarAgent:
         try:
             response = await ainvoke_llm(self.llm_with_tools, messages)
         except RetryError as e:
-            print("LLM call failed after all retries: %s", e.last_attempt.exception())
+            logger.error("LLM call failed after all retries: %s", e.last_attempt.exception())
             raise
         except Exception:
-            print("Exception: Non-retryable LLM error")
+            logger.error("Exception: Non-retryable LLM error")
             raise
-
-        print("\n--- SUPERVISOR NODE ---")
-        print(type(response).__name__, getattr(response, "content", ""))
-        if hasattr(response, "tool_calls"):
-            print("TOOL CALLS:", response.tool_calls)
 
         return {
             "messages": [response],
@@ -212,15 +206,8 @@ class ScholarAgent:
         try:
             response = await llm.ainvoke(messages)
         except Exception as e:
-            print(f"RESEARCHER: LLM call failed: {e}")
+            logger.error(f"RESEARCHER: LLM call failed: {e}")
             return {"researcher_messages": []}
-        
-        print("\n--- RESEARCHER STATE ---\n")
-        print(type(response).__name__, getattr(response, "content", ""))
-        if hasattr(response, "tool_calls"):
-            print("TOOL CALLS:", response.tool_calls)
-
-        print("\n-----------------------\n")
 
         return {
             "researcher_messages": [response]
@@ -266,7 +253,7 @@ class ScholarAgent:
         try:
             response = await llm.ainvoke([SystemMessage(content = prompt)])
         except Exception as e:
-            print(f"NOTES GENERATOR: LLM call failed: {e}")
+            logger.error(f"NOTES GENERATOR: LLM call failed: {e}")
             return {"notes_text": []}
 
         return {
@@ -323,11 +310,6 @@ class ScholarAgent:
                     for msg in messages:
                         if isinstance(msg, AIMessage):
                             if msg.tool_calls:
-                                for tc in msg.tool_calls:
-                                    print(f"  TOOL CALL [{node_name}]: {tc['name']}")
-                                    print(f"  {tc['args']}")
-                                print()
-
                                 yield {
                                     'is_task_complete': False,
                                     'require_user_input': False,
@@ -342,12 +324,7 @@ class ScholarAgent:
                                     'content': last_ai_content,
                                 }
 
-                        elif isinstance(msg, ToolMessage):
-                            print(
-                                f"[Tool result: {msg.name}]"
-                            )
-                            print()
-                            
+                        elif isinstance(msg, ToolMessage):                            
                             if (isinstance(msg.content, list)):
                                 tool_parts = msg.content
                                 msg_content = "\n\n".join(
@@ -366,7 +343,7 @@ class ScholarAgent:
             completed_normally = True
 
         except Exception as exc:
-            print(f"Graph execution failed: {exc}")
+            logger.error(f"Graph execution failed: {exc}")
 
             yield {
                 "is_task_complete": True,

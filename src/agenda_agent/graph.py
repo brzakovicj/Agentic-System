@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from pathlib import Path
 import sys
 from typing import Any, AsyncIterable
@@ -14,6 +15,8 @@ from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -138,7 +141,7 @@ class AgendaAgent:
         try:
             response = await llm.ainvoke(messages)
         except Exception as exc:
-            print(f"Agenda agent: {exc}")
+            logger.error(f"Agenda agent: {exc}")
 
             response = AIMessage(
                 content=f"Error occurred: {str(exc)}"
@@ -181,11 +184,6 @@ class AgendaAgent:
                     for msg in messages:
                         if isinstance(msg, AIMessage):
                             if msg.tool_calls:
-                                for tc in msg.tool_calls:
-                                    print(f"  TOOL CALL [{node_name}]: {tc['name']}")
-                                    print(f"  {tc['args']}")
-                                print()
-
                                 yield {
                                     'is_task_complete': False,
                                     'require_user_input': False,
@@ -201,11 +199,6 @@ class AgendaAgent:
                                 }
 
                         elif isinstance(msg, ToolMessage):
-                            print(
-                                f"[Tool result: {msg.name}]"
-                            )
-                            print()
-                            
                             if (isinstance(msg.content, list)):
                                 tool_parts = msg.content
                                 msg_content = "\n\n".join(
@@ -224,7 +217,7 @@ class AgendaAgent:
             completed_normally = True
 
         except Exception as exc:
-            print(f"Graph execution failed: {exc}")
+            logger.info(f"Graph execution failed: {exc}")
 
             yield {
                 "is_task_complete": True,

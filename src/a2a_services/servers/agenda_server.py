@@ -98,9 +98,9 @@ def create_agenda_server():
 
 
 if __name__ == "__main__":
-    print("[Agenda A2A Service] Starting on http://localhost:9002")
-    print("[Agenda A2A Service] Agent Card: "
+    logger.info("[Agenda A2A Service] Starting on http://localhost:9002")
+    logger.info("[Agenda A2A Service] Agent Card: "
           "http://localhost:9002/.well-known/agent-card.json")
-    print("[Agenda A2A Service] Press Ctrl+C to stop\n")
+    logger.info("[Agenda A2A Service] Press Ctrl+C to stop\n")
     LLMFactory.initialize()
     uvicorn.run(create_agenda_server(), host="127.0.0.1", port=9002)

@@ -226,10 +226,7 @@ class A2A_Client:
 
             logger.info(f"Sending message to {target_agent_url}")
 
-            async for event in client.send_message(request):
-                print(f'Event fields: {[field.name for field, _ in event.ListFields()]}')
-                print(f'Event: {event}')
-                
+            async for event in client.send_message(request):              
                 # --- Direktna poruka (agent odgovorio bez taska) ---
                 if event.HasField('message'):
                     return {

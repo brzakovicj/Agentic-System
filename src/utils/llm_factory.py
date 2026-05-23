@@ -17,32 +17,6 @@ class ModelTier(Enum):
     LOCAL = "local"
     REMOTE = "remote"
 
-
-# class FallbackChatModel(BaseChatModel):
-#     """Wrapper koji pokušava remote, pa pada na local pri grešci."""
-    
-#     primary: BaseChatModel
-#     fallback: BaseChatModel
-
-#     @property
-#     def _llm_type(self) -> str:
-#         return "fallback-chat-model"
-
-#     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-#         try:
-#             return self.primary._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
-#         except Exception as e:
-#             logger.warning(f"Remote model failed ({e}), falling back to local.")
-#             return self.fallback._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
-
-#     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
-#         try:
-#             return await self.primary._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
-#         except Exception as e:
-#             logger.warning(f"Remote model failed ({e}), falling back to local.")
-#             return await self.fallback._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
-
-
 class LLMFactory:
     _instance: Optional["LLMFactory"] = None
 

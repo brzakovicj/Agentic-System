@@ -9,16 +9,6 @@ class MCPClient:
         self._tools = None
         self._sessions = []
 
-    # async def get_tools(self):
-    #     """Fetch tools from all connected MCP servers."""
-    #     try:
-    #         tools = await self.client.get_tools()
-
-    #         return tools
-    #     except Exception as e:
-    #         print(f"MCP config: {self.client.connections}")
-    #         raise RuntimeError(f"Failed to fetch tools from MCP servers: {e}")
-
     async def get_tools(self):
         if self._tools is not None:
             return self._tools

@@ -116,9 +116,9 @@ def create_documents_server():
 
 
 if __name__ == "__main__":
-    print("[Documents A2A Service] Starting on http://localhost:9004")
-    print("[Documents A2A Service] Agent Card: "
+    logger.info("[Documents A2A Service] Starting on http://localhost:9004")
+    logger.info("[Documents A2A Service] Agent Card: "
           "http://localhost:9002/.well-known/agent-card.json")
-    print("[Documents A2A Service] Press Ctrl+C to stop\n")
+    logger.info("[Documents A2A Service] Press Ctrl+C to stop\n")
     LLMFactory.initialize()
     uvicorn.run(create_documents_server(), host="127.0.0.1", port=9004)

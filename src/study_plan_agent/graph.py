@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from typing import Any, AsyncIterable
 from uuid import uuid4
 from langgraph.graph import StateGraph, END
@@ -15,6 +16,8 @@ from src.study_plan_agent.tools import handoff_to_agent
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -218,14 +221,8 @@ class StudyPlanAgent:
         try:
             response: AIMessage = await llm.ainvoke(messages)
         except Exception as exc:
-            print(f"StudyPlanAgent exception: {exc}")
+            logger.error(f"StudyPlanAgent exception: {exc}")
             raise
-
-        print("\n--- STUDY PLAN NODE ---")
-        print(type(response).__name__, getattr(response, "content", ""))
-        if hasattr(response, "tool_calls"):
-            print("TOOL CALLS:", response.tool_calls)
-        print("-----------------------\n")
 
         return {"messages": [response]}
 
@@ -265,10 +262,6 @@ class StudyPlanAgent:
                     for msg in messages:
                         if isinstance(msg, AIMessage):
                             if msg.tool_calls:
-                                for tc in msg.tool_calls:
-                                    print(f"  TOOL CALL [{node_name}]: {tc['name']}")
-                                    print(f"  {tc['args']}")
-
                                 yield {
                                     "is_task_complete": False,
                                     "require_user_input": False,
@@ -284,8 +277,6 @@ class StudyPlanAgent:
                                 }
 
                         elif isinstance(msg, ToolMessage):
-                            print(f"[Tool result: {msg.name}]")
-
                             if isinstance(msg.content, list):
                                 msg_content = "\n\n".join(
                                     m.content
@@ -304,7 +295,7 @@ class StudyPlanAgent:
             completed_normally = True
 
         except Exception as exc:
-            print(f"Greška u izvršavanju grafa: {exc}")
+            logger.error(f"Greška u izvršavanju grafa: {exc}")
             yield {
                 "is_task_complete": True,
                 "require_user_input": False,

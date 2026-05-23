@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import logging
 import sys
 from typing import Any, AsyncIterable
 from langgraph.graph import StateGraph, END
@@ -14,6 +15,8 @@ from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -101,14 +104,7 @@ class DocumentsAgent:
         try:
             response: AIMessage = await llm.ainvoke([SystemMessage(content = system_prompt)] + state["messages"])
         except Exception as exc:
-            print(f"Documents agent: {exc}")
-        
-        print("\n--- DOCUMENTS NODE ---\n")
-        print(type(response).__name__, getattr(response, "content", ""))
-        if hasattr(response, "tool_calls"):
-            print("TOOL CALLS:", response.tool_calls)
-
-        print("\n-----------------------\n")
+            logger.error(f"Documents agent: {exc}")
         
         return {
             "messages": [response]
@@ -145,11 +141,6 @@ class DocumentsAgent:
                     for msg in messages:
                         if isinstance(msg, AIMessage):
                             if msg.tool_calls:
-                                for tc in msg.tool_calls:
-                                    print(f"  TOOL CALL [{node_name}]: {tc['name']}")
-                                    print(f"  {tc['args']}")
-                                print()
-
                                 yield {
                                     'is_task_complete': False,
                                     'require_user_input': False,
@@ -165,11 +156,6 @@ class DocumentsAgent:
                                 }
 
                         elif isinstance(msg, ToolMessage):
-                            print(
-                                f"[Tool result: {msg.name}]"
-                            )
-                            print()
-                            
                             if (isinstance(msg.content, list)):
                                 tool_parts = msg.content
                                 msg_content = "\n\n".join(
@@ -188,7 +174,7 @@ class DocumentsAgent:
             completed_normally = True
 
         except Exception as exc:
-            print(f"Graph execution failed: {exc}")
+            logger.error(f"Graph execution failed: {exc}")
 
             yield {
                 "is_task_complete": True,

@@ -112,9 +112,9 @@ def create_scholar_server():
 
 
 if __name__ == "__main__":
-    print("[Scholar A2A Service] Starting on http://localhost:9001")
-    print("[Scholar A2A Service] Agent Card: "
+    logger.info("[Scholar A2A Service] Starting on http://localhost:9001")
+    logger.info("[Scholar A2A Service] Agent Card: "
           "http://localhost:9001/.well-known/agent-card.json")
-    print("[Scholar A2A Service] Press Ctrl+C to stop\n")
+    logger.info("[Scholar A2A Service] Press Ctrl+C to stop\n")
     LLMFactory.initialize()
     uvicorn.run(create_scholar_server(), host="127.0.0.1", port=9001)
