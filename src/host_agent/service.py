@@ -78,6 +78,8 @@ class HostAgentService:
 
         self.prompt_manager = PromptManager()
 
+        self._active_conversations: dict[str, dict] = {}
+
     async def process_message(self, user_input: str) -> str:
 
         result = await self.client.a2a_list_discovered_agents()
@@ -143,47 +145,60 @@ class HostAgentService:
 
         return "No response received."
     
-    async def process_message_stream(self, user_input: str):
+    async def process_message_stream(self, user_input: str, context_id: str | None = None):
+        if (context_id is None):
+            context_id = str(uuid4())
 
-        result = await self.client.a2a_list_discovered_agents()
+        existing = self._active_conversations.get(context_id)
+        if (existing):
+            selected_agent = existing["selected_agent"]
+            message_id = existing["message_id"]
+        else:
+            result = await self.client.a2a_list_discovered_agents()
 
-        agent_cards = ""
-        if result["status"] == "success":
-            for agent in result["agents"]:
-                agent_cards += json.dumps(agent, indent=2) + "\n"
+            agent_cards = ""
+            if result["status"] == "success":
+                for agent in result["agents"]:
+                    agent_cards += json.dumps(agent, indent=2) + "\n"
 
-        prompt = self.prompt_manager.get(
-            "host_agent",
-            user_input=user_input,
-            agent_cards=agent_cards
-        )
+            prompt = self.prompt_manager.get(
+                "host_agent",
+                user_input=user_input,
+                agent_cards=agent_cards
+            )
 
-        response = await self.llm.ainvoke([
-            SystemMessage(content=prompt)
-        ])
+            response = await self.llm.ainvoke([
+                SystemMessage(content=prompt)
+            ])
 
-        selected_agent = response.content.strip()
+            selected_agent = response.content.strip()
 
-        if selected_agent == "NONE":
-            yield {
-                "type": "final",
-                "content": CAPABILITIES_MESSAGE
+            if selected_agent == "NONE":
+                yield {
+                    "type": "final",
+                    "content": CAPABILITIES_MESSAGE
+                }
+                return
+
+            if selected_agent not in self.agent_urls:
+                yield {
+                    "type": "final",
+                    "content": SOMETHING_WENT_WRONG_MESSAGE
+                }
+                return
+
+            message_id = str(uuid4())
+
+            self._active_conversations[context_id] = {
+                "selected_agent": selected_agent,
+                "message_id": message_id,
             }
-            return
-
-        if selected_agent not in self.agent_urls:
-            yield {
-                "type": "final",
-                "content": SOMETHING_WENT_WRONG_MESSAGE
-            }
-            return
-
-        message_id = str(uuid4())
 
         async for result in self.client.a2a_send_message_stream(
             message_text=user_input,
             target_agent_url=selected_agent,
             message_id=message_id,
+            context_id=context_id
         ):
 
             # UPDATE
@@ -217,5 +232,19 @@ class HostAgentService:
                             "type": "final",
                             "content": parts[0]["text"]
                         }
+
+                elif response_data["type"] == "status_update":
+                    if response_data.get("state") == "TASK_STATE_INPUT_REQUIRED":
+                        # Agent is waiting for input — keep conversation alive
+                        message = response_data["data"].get("status", {}).get("message", {})
+                        parts = message.get("parts", [])
+                        yield {
+                            "type": "input_required",  # <-- distinct type so the caller knows
+                            "content": parts[0]["text"] if parts else "Input required.",
+                            "context_id": context_id,  # caller must echo this back
+                        }
+                        return  # don't clean up _active_conversations yet
+            
+                del self._active_conversations[context_id]
 
         return

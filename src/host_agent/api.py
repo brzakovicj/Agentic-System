@@ -52,15 +52,18 @@ async def chat_stream(request: ChatRequest, http_request: Request):
  
     async def event_generator():
         try:
-            async for event in host_service.process_message_stream(request.message):
+            async for event in host_service.process_message_stream(request.message, request.context_id):
                 # Ako klijent prekine konekciju, prestani da generisujeÅ¡
                 if await http_request.is_disconnected():
                     logger.info("Client disconnected, stopping stream.")
                     break
  
                 yield {
-                    "event": event["type"],           # "update" | "final" | "error"
-                    "data": json.dumps({"content": event["content"]}),
+                    "event": event["type"],
+                    "data": json.dumps({
+                        "content": event["content"],
+                        "context_id": event.get("context_id"),  # pass back to client
+                    }),
                 }
  
         except Exception:

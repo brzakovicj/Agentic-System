@@ -62,6 +62,9 @@ with title_row:
     st.title("Study Buddy", anchor=False, width="stretch")
 
 # Provera stanja sesije
+if "context_id" not in st.session_state:
+    st.session_state.context_id = None
+
 user_just_asked_initial_question = (
     "initial_question" in st.session_state and st.session_state.initial_question
 )
@@ -110,6 +113,7 @@ with title_row:
         st.session_state.messages = []
         st.session_state.initial_question = None
         st.session_state.selected_suggestion = None
+        st.session_state.context_id = None
 
     st.button(
         "Restart",
@@ -141,7 +145,10 @@ if user_message:
             with st.spinner("Working on it..."):
                 response = requests.post(
                     API_URL,
-                    json={"message": user_message},
+                    json={
+                        "message": user_message,
+                        "context_id": st.session_state.context_id,
+                    },
                     stream=True,
                     timeout=120,  # 2 minuta maks. za duže zadatke
                 )
@@ -159,10 +166,18 @@ if user_message:
                     elif event.event == "final":
                         placeholder.empty()
                         final_response = content
+                        st.session_state.context_id = None  # conversation done, reset
+
+                    elif event.event == "input_required":
+                        placeholder.empty()
+                        final_response = content
+                        # Save context_id so the next message resumes the same thread
+                        st.session_state.context_id = data.get("context_id")
  
                     elif event.event == "error":
                         placeholder.empty()
                         st.error(content)
+                        st.session_state.context_id = None
                         error_occurred = True
                         break
  

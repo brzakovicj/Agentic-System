@@ -291,7 +291,10 @@ class A2A_Client:
             }
         
     async def a2a_send_message_stream(
-        self, message_text: str, target_agent_url: str, message_id: str | None = None
+        self, message_text: str, 
+        target_agent_url: str, 
+        message_id: str | None = None,
+        context_id: str | None = None
     ):
         """
         Send a message to a specific A2A agent and stream all events as they arrive.
@@ -319,6 +322,7 @@ class A2A_Client:
  
             message = Message(
                 message_id=message_id,
+                context_id=context_id,
                 role=Role.ROLE_USER,
                 parts=[Part(text=message_text)],
             )
@@ -386,6 +390,17 @@ class A2A_Client:
                             "target_agent_url": target_agent_url,
                         }
                         # Ne stajemo — čekamo sledeći event
+                    elif state_name == 'TASK_STATE_INPUT_REQUIRED':
+                        yield {
+                            "status": "success",
+                            "response": {
+                                "type": "status_update",
+                                "state": state_name,
+                                "data": MessageToDict(event.status_update, preserving_proto_field_name=True),
+                            },
+                            "message_id": message_id,
+                            "target_agent_url": target_agent_url,
+                        }
  
             if not got_any_event:
                 yield {
