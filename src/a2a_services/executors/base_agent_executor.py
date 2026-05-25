@@ -133,11 +133,11 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
                         message=agent_message,
                     )
                 elif require_user_input:
-                    await updater.requires_input(
-                        message=agent_message
+                    await updater.update_status(
+                        TaskState.TASK_STATE_INPUT_REQUIRED,
+                        message=agent_message,
                     )
                     logger.info("[%s] Task %s waiting for input.", self.__class__.__name__, task_id)
-                    break
                 else:
                     await updater.add_artifact(
                         [Part(text=content)],

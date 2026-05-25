@@ -171,8 +171,7 @@ if user_message:
                     elif event.event == "input_required":
                         placeholder.empty()
                         final_response = content
-                        # Save context_id so the next message resumes the same thread
-                        st.session_state.context_id = data.get("context_id")
+                        st.session_state.context_id = data.get("context_id") # Save context_id so the next message resumes the same thread
  
                     elif event.event == "error":
                         placeholder.empty()

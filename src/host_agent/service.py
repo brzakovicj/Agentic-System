@@ -224,6 +224,8 @@ class HostAgentService:
                             "type": "final",
                             "content": parts[0]["text"]
                         }
+                    
+                    del self._active_conversations[context_id]
 
                 elif response_data["type"] == "message":
                     parts = response_data["data"].get("parts", [])
@@ -232,6 +234,8 @@ class HostAgentService:
                             "type": "final",
                             "content": parts[0]["text"]
                         }
+                    
+                    del self._active_conversations[context_id]
 
                 elif response_data["type"] == "status_update":
                     if response_data.get("state") == "TASK_STATE_INPUT_REQUIRED":
@@ -243,8 +247,5 @@ class HostAgentService:
                             "content": parts[0]["text"] if parts else "Input required.",
                             "context_id": context_id,  # caller must echo this back
                         }
-                        return  # don't clean up _active_conversations yet
-            
-                del self._active_conversations[context_id]
 
         return
