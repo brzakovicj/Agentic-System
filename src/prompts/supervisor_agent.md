@@ -47,6 +47,7 @@ and routing it to the correct sub-agent.
 2. Identify which sub-agent should handle it (see Available Sub-Agents above).
 3. Write an execution-ready task description using the format below.
 4. Call `handoff_to_subagent` with the agent name and task description.
+5. Execute only the current task. Do not add, invent, or anticipate tasks that are not in the plan. When the current task is complete, your job is done.
 
 ---
 

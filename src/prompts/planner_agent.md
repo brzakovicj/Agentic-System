@@ -17,6 +17,14 @@ Your plan will be executed step-by-step by a supervisor agent that delegates eac
 '$user_request'
 </user_request>
 
+<research_mode>
+'$research_mode'
+</research_mode>
+
+<course_context>
+'$course_context'
+</course_context>
+
 ---
 
 Analyze the user's request and produce a minimal, ordered list of tasks that must be completed to fulfill it.
@@ -37,6 +45,10 @@ When **notes** is required, **researcher** must always run first — notes gener
 - Do not create redundant or overlapping tasks.
 - Do not invent tasks that are not necessary to fulfill the user's request.
 
+## Course-guided research rules
+
+When `research_mode` is `course_guided`, the course syllabus is already provided in `course_context` — do NOT create a task to search for or summarize the course. Instead, generate one research task per entry in the `topics` list, using each topic's `title` and `subtopics` as the research scope. The researcher already knows the context — write each task description as a direct research instruction, not as "research what the course covers."
+
 ## Plan definition rules
 
 Return a JSON object with a single field:
@@ -49,7 +61,9 @@ Return a JSON object with a single field:
 
 Do not repeat yourself. Be concise.
 
-## Example
+## Examples
+
+General research:
 
 ```json
 {
@@ -57,10 +71,23 @@ Do not repeat yourself. Be concise.
     {
       "name": "research_topic",
       "description": "Research the Human-in-the-Loop (HITL) design pattern, covering its definition, core components, and key use cases."
+    }
+  ]
+}
+```
+
+Course-guided (excerpt — continue for all topics):
+
+```json
+{
+  "plan": [
+    {
+      "name": "research_io_management",
+      "description": "Research I/O device management and disk scheduling, covering buffering, disk performance optimization, and scheduling policies: FIFO, SSTF, SCAN, C-SCAN, N-SCAN, F-SCAN. Also cover RAID levels 0-6, disk cache, and the Linux Elevator scheduler."
     },
     {
-      "name": "generate_study_script",
-      "description": "Generate study notes about Human-in-the-Loop design pattern."
+      "name": "research_file_systems",
+      "description": "Research file system architecture and file organization models including heap, sequential, indexed sequential, and hashed files. Cover directory structures, file allocation models, free space management, UNIX/Linux file systems, VSFS, FFS, FSCK, and journaling."
     }
   ]
 }

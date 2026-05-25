@@ -9,7 +9,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import RunnableConfig
 from src.scholar_agent.state import ScholarState
-from src.scholar_agent.tools import PlannerTaskSchema, create_pdf, handoff_to_subagent
+from src.scholar_agent.tools import CourseMatchSchema, PlannerTaskSchema, create_pdf, handoff_to_subagent
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
@@ -46,6 +46,7 @@ class ScholarAgent:
 
         # ----- NODES -----
 
+        builder.add_node("syllabus_loader", self.syllabus_loader)
         builder.add_node("planner", self.planner)
         builder.add_node("supervisor", self.supervisor)
         builder.add_node("supervisor_tools", ToolNode(self.tools))
@@ -54,6 +55,7 @@ class ScholarAgent:
         builder.add_node("researcher_node", self.researcher_node)
         builder.add_node("researcher_tools", ToolNode(self.mcp_tools, messages_key="researcher_messages"))
         builder.add_node("researcher_done", self.researcher_done)
+        builder.add_node("combine_research", self.combine_research)
         
         # Notes generator
         builder.add_node("notes_node", self.notes_node)
@@ -61,7 +63,8 @@ class ScholarAgent:
 
         # ----- EDGES -----
 
-        builder.set_entry_point("planner")
+        builder.set_entry_point("syllabus_loader")
+        builder.add_edge("syllabus_loader", "planner")
         builder.add_edge("planner", "supervisor")
 
         builder.add_conditional_edges(
@@ -69,6 +72,7 @@ class ScholarAgent:
             self.supervisor_router,
             {
                 "supervisor_tools": "supervisor_tools",
+                "combine_research": "combine_research",
                 END: END,
             }
         )
@@ -87,6 +91,8 @@ class ScholarAgent:
         builder.add_edge("notes_node", "notes_done")
         builder.add_edge("notes_done", "supervisor")
 
+        builder.add_edge("combine_research", END)
+
         self.graph = builder.compile(checkpointer=MemorySaver())
 
         return self.graph
@@ -96,6 +102,8 @@ class ScholarAgent:
         last_message = state["messages"][-1]
 
         if state["final_answer"]:
+            if state["research_data"] and not state["notes_text"] and len(state["research_data"]) > 1:
+                return "combine_research"
             return END
 
         if last_message.tool_calls:
@@ -118,6 +126,51 @@ class ScholarAgent:
     # NODE FUNCTIONS
     ###################################################################################
 
+    def load_syllabi(self) -> dict:
+        # Go up two levels from src/scholar_agent/ to reach project root
+        project_root = os.path.dirname(os.path.dirname(self.base_dir))
+        syllabi_path = os.path.join(project_root, "course_syllabus/syllabus.json")
+        with open(syllabi_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    async def syllabus_loader(self, state: ScholarState):
+        """Check if the query matches a known course and load its syllabus."""
+        query = state["messages"][-1].content if state["messages"] else ""
+        syllabi = self.load_syllabi()
+
+        courses = syllabi["courses"]
+
+        llm = self.llm_factory.get_llm_with_structured_output(
+            schema=CourseMatchSchema,
+            tier=ModelTier.REMOTE
+        )
+
+        prompt = self.prompt_manager.get(
+            "syllabus_agent", 
+            query = query, 
+            courses = json.dumps([{"key": k, "course": v["course"]} for k, v in courses.items()], ensure_ascii=False)
+        )
+
+        print(prompt)
+
+        try:
+            response = await llm.ainvoke([SystemMessage(content=prompt)])
+            key = response["matched_key"]
+            if key and key in courses:
+                matched = courses[key]
+                print(f"\n--- SYLLABUS LOADER: matched '{matched['course']}' ---\n")
+                return {
+                    "course_context": matched,
+                    "research_mode": "course_guided"
+                }
+        except Exception as e:
+            print(f"Syllabus loader error: {e}")
+
+        return {
+            "course_context": None,
+            "research_mode": "general"
+        }
+
     async def planner(self, state: ScholarState):
         """The planner agent, which breaks down the task into smaller sub-tasks."""
         llm = self.llm_factory.get_llm_with_structured_output(
@@ -125,10 +178,21 @@ class ScholarAgent:
             tier = ModelTier.REMOTE
         )
 
+        research_mode = state["research_mode"]
+        course_context_str = ""
+        if research_mode == "course_guided" and state.get("course_context"):
+            course_context_str = json.dumps(state["course_context"], ensure_ascii=False, indent=2)
+
         prompt = self.prompt_manager.get(
             "planner_agent", 
             current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-            user_request = state["messages"][-1].content if state["messages"] else "None")
+            user_request = state["messages"][-1].content if state["messages"] else "None",
+            research_mode = state.get("research_mode", "general"),
+            course_context = course_context_str
+        )
+
+        print("PLANNER")
+        print(prompt)
 
         try:
             response = await llm.ainvoke([SystemMessage(content=prompt)])
@@ -166,13 +230,10 @@ class ScholarAgent:
             task_description = current_task["description"]
         )
 
-        messages = [SystemMessage(content = prompt)] + state["messages"]
+        messages = [SystemMessage(content=prompt)]
 
         try:
-            response = await ainvoke_llm(self.llm_with_tools, messages)
-        except RetryError as e:
-            print("LLM call failed after all retries: %s", e.last_attempt.exception())
-            raise
+            response = await self.llm_with_tools.ainvoke(messages)
         except Exception:
             print("Exception: Non-retryable LLM error")
             raise
@@ -250,6 +311,35 @@ class ScholarAgent:
             "current_task_idx": state["current_task_idx"] + 1,
         }
     
+    async def combine_research(self, state: ScholarState):
+        """Combines all research_data entries into a single coherent response."""
+        print(f"----- COMBINE RESEARCH -----")
+        llm = self.llm_factory.get_remote_llm()
+
+        research_data_str = "\n\n---\n\n".join(state["research_data"])
+
+        prompt = f"""You have received research results on multiple topics. 
+            Combine them into a single, well-structured response that covers all topics.
+            Do not omit any topic. Preserve all important details.
+
+            Research data:
+            {research_data_str}
+        """
+
+        try:
+            response = await llm.ainvoke([SystemMessage(content=prompt)])
+        except Exception as e:
+            print(f"COMBINE RESEARCH: failed: {e}")
+            # Fall back to just joining the data
+            response_content = research_data_str
+            return {
+                "messages": [AIMessage(content=response_content)]
+            }
+
+        return {
+            "messages": [AIMessage(content=response.content)]
+        }
+    
     ############################### NOTES GENERATOR ####################################
 
     async def notes_node(self, state: ScholarState):
@@ -267,7 +357,7 @@ class ScholarAgent:
             response = await llm.ainvoke([SystemMessage(content = prompt)])
         except Exception as e:
             print(f"NOTES GENERATOR: LLM call failed: {e}")
-            return {"notes_text": []}
+            return {"notes_text": research_data_str}
 
         return {
             "notes_text": response.content
@@ -298,6 +388,9 @@ class ScholarAgent:
             researcher_messages=[],
             task_description=None,
             notes_text=None,
+            course_context=None,
+            research_mode="general",
+            notes_sections=[]
         )
 
         config = RunnableConfig(

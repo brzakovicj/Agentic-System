@@ -1,0 +1,120 @@
+{
+    "courses": {
+        "uvod_u_nauku_o_podacima": {
+            "course": "Uvod u nauku o podacima",
+            "topics": [
+                {
+                    "week": 1, 
+                    "title": "Nedostajuće vrednosti",
+                    "subtopics": [
+                        "Umetanje ili uklanjanje podataka",
+                        "Brisanje podataka",
+                        "Mean, Median and Mode",
+                        "Linearna regresija",
+                        "KNN (K Nearest Neighbors)",
+                        "Umetanje vrednosti za kategorijske promenljive"
+                    ]
+                },
+                {
+                    "week": 2, 
+                    "title": "Statističko učenje",
+                    "subtopics": [
+                        "Zaključivanje (Inference)",
+                        "Predikcija",
+                        "Kako određujemo f?",
+                        "Parametarske metode",
+                        "Neparametarske metode",
+                        "Kompromis između tačnosti predviđanja modela i interpretabilnosti"
+                    ]
+                },
+                {
+                    "week": 3, 
+                    "title": "Procena tačnosti modela",
+                    "subtopics": [
+                        "Bias-Variance kompromis (eng. trade-off)",
+                        "Mean squared error (MSE)"
+                    ]
+                }
+            ]
+        },
+        "kvalitet_i_testiranje_softvera": {
+            "course": "Kvalitet i testiranje softvera",
+            "topics": [
+                {
+                    "week": 1, 
+                    "title": "Software Testing Introduction",
+                    "subtopics": [
+                        "What is software testing and why it's necessary?",
+                        "Seven Testing Principles"
+                    ]
+                },
+                {
+                    "week": 2, 
+                    "title": "Testing Fundamentals 1",
+                    "subtopics": [
+                        "What is a Test Case?",
+                        "Test Scenario Vs Test Case",
+                        "How to Write Test Cases in Manual Testing",
+                        "Test levels",
+                        "Test Types (Functional, Non-functional, White-box, Change-related, Static Testing)",
+                        "Test Techniques"
+                    ]
+                },
+                {
+                    "week": 3, 
+                    "title": "Testing Fundamentals 2",
+                    "subtopics": [
+                        "Test case and Test scenario",
+                        "How to write Test Case?",
+                        "Tips for Writing Tests",
+                        "Test Plan",
+                        "Defect Management",
+                        "What is a Bug",
+                        "Bug Life Cycle Status",
+                        "Bug Priority & Severity"
+                    ]
+                }
+            ]
+        },
+        "operativni_sistemi_2": {
+            "course": "Operativni sistemi 2",
+            "topics": [
+                {
+                    "week": 1, 
+                    "title": "Upravljanje ulazno/izlaznim uređajima i raspoređivanje diska",
+                    "subtopics": [
+                        "Arhitektura U/I sistema",
+                        "Baferovanje",
+                        "Optimizacija performansi diska",
+                        "Politike raspoređivanja diska - FIFO, PRI, LIFO, SSTF",
+                        "Politike raspoređivanja diska - SCAN, C-SCAN, N-SCAN, F-SCAN",
+                        "Keš diska"
+                    ]
+                },
+                {
+                    "week": 2, 
+                    "title": "Fajl sistemi",
+                    "subtopics": [
+                        "Arhitektura fajl sistema",
+                        "Organizacija fajlova - zahtevi",
+                        "Organizacija fajlova - hrpa, sekvencijalni fajl",
+                        "Organizacija fajlova - indeksirani sekvencijalni fajl, indeksni fajl, direktni (heširani) fajl",
+                        "Direktorijumi"
+                    ]
+                },
+                {
+                    "week": 3, 
+                    "title": "Jednoprocesorsko raspoređivanje",
+                    "subtopics": [
+                        "Vrste procesorskog raspoređivanja (dugoročno, srednjeročno, kratkoročno, U/I), skup relevantnih kriterijuma",
+                        "FCFS, RR - Jednoprocesorsko raspoređivanje",
+                        "VRR, SPN - Jednoprocesorsko raspoređivanje",
+                        "SRT, HRRN, FeedBack raspoređivanje - Jednoprocesorsko raspoređivanje",
+                        "Fairshare raspoređivanje - Jednoprocesorsko raspoređivanje",
+                        "UNIX raspoređivanje - Jednoprocesorsko raspoređivanje"
+                    ]
+                }
+            ]
+        }
+    }
+}
