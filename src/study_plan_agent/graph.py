@@ -11,7 +11,7 @@ from langgraph.types import RunnableConfig
 from src.a2a_services.a2a_client import A2A_Client
 from src.study_plan_agent.state import StudyPlanState
 from src.prompts.prompt_manager import PromptManager
-from src.study_plan_agent.tools import handoff_to_agent
+from src.study_plan_agent.tools import CourseMatchSchema, handoff_to_agent
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
@@ -30,7 +30,6 @@ class StudyPlanAgent:
 
         self.a2a_client = A2A_Client(
             known_agent_urls=[
-                os.getenv("SCHOLAR_URL"),
                 os.getenv("AGENDA_URL"),
             ]
         )
@@ -58,12 +57,14 @@ class StudyPlanAgent:
         builder = StateGraph(StudyPlanState)
 
         # Nodes
+        builder.add_node("syllabus_loader", self.syllabus_loader)  # NEW
         builder.add_node("study_plan_node", self.study_plan_node)
         builder.add_node("study_plan_tools", ToolNode(self._tools))
         builder.add_node("execute_agent", self.execute_agent)
 
         # Edges
-        builder.set_entry_point("study_plan_node")
+        builder.set_entry_point("syllabus_loader")                 # CHANGED
+        builder.add_edge("syllabus_loader", "study_plan_node")     # NEW
 
         builder.add_conditional_edges(
             "study_plan_node",
@@ -89,6 +90,41 @@ class StudyPlanAgent:
     # NODES
     ##############################################################################################
 
+    def _load_syllabi(self) -> dict:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(base_dir))
+        syllabi_path = os.path.join(project_root, "course_syllabus/syllabus.json")
+        with open(syllabi_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    async def syllabus_loader(self, state: StudyPlanState):
+        query = state["messages"][-1].content if state["messages"] else ""
+        syllabi = self._load_syllabi()
+        courses = syllabi["courses"]
+
+        llm = self._llm_factory.get_llm_with_structured_output(
+            schema=CourseMatchSchema,
+            tier=ModelTier.REMOTE
+        )
+
+        prompt = self._prompt_manager.get(
+            "syllabus_agent", 
+            query = query, 
+            courses = json.dumps([{"key": k, "course": v["course"]} for k, v in courses.items()], ensure_ascii=False)
+        )
+
+        try:
+            response = await llm.ainvoke([SystemMessage(content=prompt)])
+            key = response["matched_key"]
+            if key and key in courses:
+                matched = courses[key]
+                print(f"\n--- STUDY PLAN SYLLABUS LOADER: matched '{matched['course']}' ---\n")
+                return {"course_context": matched}
+        except Exception as e:
+            print(f"Study plan syllabus loader error: {e}")
+
+        return {"course_context": None}
+
     async def execute_agent(self, state: StudyPlanState):
         
         selected_agent = state["selected_agent"] or ""
@@ -101,15 +137,12 @@ class StudyPlanAgent:
 
             yield {
                 "messages": [ai_message],
-                "agenda_data": [],
-                "scholar_data": []
+                "agenda_data": []
             }
             return
         
         if selected_agent == "agenda":
             selected_agent_url = os.getenv("AGENDA_URL")
-        elif selected_agent == "scholar":
-            selected_agent_url = os.getenv("SCHOLAR_URL")
 
         message_id = str(uuid4())
 
@@ -131,11 +164,7 @@ class StudyPlanAgent:
                         "messages": [ai_message],
                         "agenda_data": []
                     }
-                elif selected_agent == "scholar":
-                    yield {
-                        "messages": [ai_message],
-                        "scholar_data": []
-                    }
+                
                 return 
             # FINAL
             if result["status"] in ["done", "completed", "success"]:
@@ -156,11 +185,7 @@ class StudyPlanAgent:
                                 "messages": [ai_message],
                                 "agenda_data": [ai_message]
                             }
-                        elif selected_agent == "scholar":
-                            yield {
-                                "messages": [ai_message],
-                                "scholar_data": [ai_message]
-                            }
+
                         got_response = True
 
                 elif response_data["type"] == "message":
@@ -178,11 +203,6 @@ class StudyPlanAgent:
                                 "messages": [ai_message],
                                 "agenda_data": [ai_message]
                             }
-                        elif selected_agent == "scholar":
-                            yield {
-                                "messages": [ai_message],
-                                "scholar_data": [ai_message]
-                            }
 
         if not got_response:
             ai_message = AIMessage(
@@ -192,8 +212,6 @@ class StudyPlanAgent:
             
             if selected_agent == "agenda":
                 yield {"messages": [ai_message], "agenda_data": [ai_message]}
-            elif selected_agent == "scholar":
-                yield {"messages": [ai_message], "scholar_data": [ai_message]}
 
     async def study_plan_node(self, state: StudyPlanState):
         llm = self._llm_factory.get_tool_llm(
@@ -205,12 +223,17 @@ class StudyPlanAgent:
             for tool in self._tools
         )
 
+        course_context_str = ""
+        if state.get("course_context"):
+            course_context_str = json.dumps(state["course_context"], ensure_ascii=False, indent=2)
+
         system_prompt = self._prompt_manager.get(
             "study_plan_agent",
             user_input=state["user_input"] if state["user_input"] else "",
             tool_context=tool_context,
             agent_cards=self.agent_cards,
             current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            course_context=course_context_str,  # NEW
         )
 
         messages = [SystemMessage(content=system_prompt)] + state["messages"]
@@ -239,8 +262,8 @@ class StudyPlanAgent:
             user_input=query,
             task_description=None,
             selected_agent=None,
-            scholar_data=[],
-            agenda_data=[]
+            agenda_data=[],
+            course_context=None,  # NEW
         )
 
         config = RunnableConfig(

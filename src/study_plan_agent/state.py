@@ -14,6 +14,6 @@ class StudyPlanState(TypedDict):
 
     selected_agent: NotRequired[str | None]
 
-    scholar_data: Annotated[list, operator.add]
-
     agenda_data: Annotated[list, operator.add]
+
+    course_context: NotRequired[dict | None]  # NEW
