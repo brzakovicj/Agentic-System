@@ -16,6 +16,7 @@ from src.agenda_agent.state import AgendaState
 from src.prompts.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
+from src.utils.url_cache import load_cached_url, save_cached_url
 
 load_dotenv()
 
@@ -101,8 +102,32 @@ class AgendaAgent:
     # Nodes
     # ------------------------------------------------------------------
     
-    async def agenda_init(self, state: AgendaState):
-        url: str | None = state["agenda_url"] or None
+    async def agenda_init(self, state: AgendaState, config: RunnableConfig):
+        llm = self._llm_factory.get_remote_llm()
+
+        system_prompt = self._prompt_manager.get(
+            "agenda_init_agent",
+            user_query=state["user_input"] or ""
+        )
+
+        messages = [SystemMessage(content=system_prompt)]
+
+        try:
+            response = await llm.ainvoke(messages)
+            response = response.content.strip()
+            logger.info("LLM URL %s", response)
+        except Exception:
+            logger.exception("agenda_init_node: LLM call failed")
+            response = "NONE"
+
+        url: str | None = response if response != "NONE" else None
+
+         # 2. Fall back to cached URL for this thread
+        if not url:
+            url = load_cached_url()
+            if url:
+                logger.info("CACHE URL %s", url)
+        
         if not url:
             url = interrupt({
                 "message": (
@@ -113,7 +138,9 @@ class AgendaAgent:
                 "placeholder": "https://university.edu/raspored.pdf",
             })
 
-        logger.info("initialize_node: url %s", url)
+            logger.info("INTERRUPT URL %s", url)
+
+        save_cached_url(url)
 
         return {
             "messages": [AIMessage(name="agenda_init", content="Successfully initialize node.")],
@@ -173,6 +200,8 @@ class AgendaAgent:
                 "thread_id": context_id,
             }
         )
+
+        logger.info("THREAD ID %s", context_id)
 
         # ── Determine whether we are resuming an interrupted run ──────────
         snapshot = await self._graph.aget_state(config)

@@ -7,6 +7,12 @@ import streamlit as st
 from htbuilder import div, styles
 from htbuilder.units import rem
 
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.utils.url_cache import clear_cached_url, load_cached_url
+
 API_URL = "http://127.0.0.1:8001/chat-stream"
 
 UPLOAD_DIR = Path("study_materials")
@@ -181,6 +187,24 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"Delete failed: {e}")
 
+    st.divider()
+
+    st.markdown("### 📅 Exam Schedule URL")
+
+    cached_url = load_cached_url()
+
+    if cached_url:
+        st.caption(f"🔗 {cached_url}")
+
+        if st.button(
+            "🗑️ Clear saved URL",
+            disabled=st.session_state.is_busy,
+        ):
+            clear_cached_url()
+            st.rerun()
+    else:
+        st.caption("No schedule URL saved yet.")
+        
     st.divider()
 
     st.subheader("📥 Generated Outputs")
@@ -378,7 +402,7 @@ if user_message:
                     elif event.event == "final":
                         placeholder.empty()
                         final_response = content
-                        st.session_state.context_id = None  # conversation done, reset
+                        st.session_state.context_id = data.get("context_id")  # ← keep it, don't reset to None
 
                     elif event.event == "input_required":
                         placeholder.empty()
