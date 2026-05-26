@@ -20,7 +20,6 @@ async def handoff_to_agent(
     """
     update = {
         "task_description": task_description,
-        "selected_agent": agent_name,
         "messages": [ToolMessage(
             name=f"handoff_to_agent",
             content=f"Successfully handed off task to {agent_name}.",
@@ -29,6 +28,6 @@ async def handoff_to_agent(
     }
 
     return Command(
-        goto="execute_agent",
+        goto="agenda_agent",
         update=update
     )

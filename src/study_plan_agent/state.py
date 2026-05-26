@@ -12,8 +12,10 @@ class StudyPlanState(TypedDict):
     
     task_description: NotRequired[str | None]
 
-    selected_agent: NotRequired[str | None]
-
     agenda_data: Annotated[list, operator.add]
 
-    course_context: NotRequired[dict | None]  # NEW
+    course_context: NotRequired[dict | None]
+
+    agenda_context_id: NotRequired[str | None]
+
+    agenda_message_id: NotRequired[str | None]
