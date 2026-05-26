@@ -16,6 +16,9 @@ class TaskSchema(TypedDict):
 class PlannerTaskSchema(TypedDict):
     plan: List[TaskSchema]
 
+class CourseMatchSchema(TypedDict):
+    matched_key: str | None
+
 @tool
 async def handoff_to_subagent(
     agent_name: Literal["researcher", "notes"],

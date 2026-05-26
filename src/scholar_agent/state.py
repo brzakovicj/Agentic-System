@@ -4,6 +4,11 @@ from langgraph.graph import add_messages
 
 from src.scholar_agent.tools import TaskSchema
 
+class NoteSection(TypedDict):
+    num: int
+    title: str
+    content: str
+
 class ScholarState(TypedDict):
     """
         The state of the scholar agent. 
@@ -23,3 +28,9 @@ class ScholarState(TypedDict):
     researcher_messages: Annotated[list, add_messages]
 
     notes_text: NotRequired[str | None]
+
+    course_context: NotRequired[dict | None]
+
+    research_mode: NotRequired[str | None]  # "course_guided" | "general"
+
+    notes_sections: Annotated[list[NoteSection], operator.add]
