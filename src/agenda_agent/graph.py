@@ -124,9 +124,11 @@ class AgendaAgent:
 
          # 2. Fall back to cached URL for this thread
         if not url:
-            url = load_cached_url()
-            if url:
-                logger.info("CACHE URL %s", url)
+            # url = load_cached_url()
+            # if url:
+            #     logger.info("CACHE URL %s", url)
+            url = state.get("agenda_url", None)
+            logger.info("CACHE URL %s", url)
         
         if not url:
             url = interrupt({
@@ -218,7 +220,6 @@ class AgendaAgent:
             # Fresh execution
             state = AgendaState(
                 messages=[HumanMessage(content=query)],
-                agenda_url=None,
                 user_input=query
             )
 

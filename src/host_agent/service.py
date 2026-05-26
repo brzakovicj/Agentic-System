@@ -176,14 +176,16 @@ class HostAgentService:
             if selected_agent == "NONE":
                 yield {
                     "type": "final",
-                    "content": CAPABILITIES_MESSAGE
+                    "content": CAPABILITIES_MESSAGE,
+                    "context_id": context_id,
                 }
                 return
 
             if selected_agent not in self.agent_urls:
                 yield {
                     "type": "final",
-                    "content": SOMETHING_WENT_WRONG_MESSAGE
+                    "content": SOMETHING_WENT_WRONG_MESSAGE,
+                    "context_id": context_id,
                 }
                 return
 
@@ -210,7 +212,8 @@ class HostAgentService:
                 if parts:
                     yield {
                         "type": "update",
-                        "content": parts[0].get("text", "Agent is working...")
+                        "content": parts[0].get("text", "Agent is working..."),
+                        "context_id": context_id,
                     }
 
             # FINAL
@@ -222,7 +225,8 @@ class HostAgentService:
                     if parts:
                         yield {
                             "type": "final",
-                            "content": parts[0]["text"]
+                            "content": parts[0]["text"],
+                            "context_id": context_id,
                         }
                     
                     del self._active_conversations[context_id]
@@ -232,7 +236,8 @@ class HostAgentService:
                     if parts:
                         yield {
                             "type": "final",
-                            "content": parts[0]["text"]
+                            "content": parts[0]["text"],
+                            "context_id": context_id,
                         }
                     
                     del self._active_conversations[context_id]

@@ -47,6 +47,11 @@ SUGGESTIONS = {
     ),
 }
 
+# Clear URL cache once per app start (not on every rerun)
+if "app_initialized" not in st.session_state:
+    clear_cached_url()
+    st.session_state.app_initialized = True
+
 # -----------------------------------------------------------------------------
 # Session state init
 
@@ -195,13 +200,6 @@ with st.sidebar:
 
     if cached_url:
         st.caption(f"🔗 {cached_url}")
-
-        if st.button(
-            "🗑️ Clear saved URL",
-            disabled=st.session_state.is_busy,
-        ):
-            clear_cached_url()
-            st.rerun()
     else:
         st.caption("No schedule URL saved yet.")
         
