@@ -1,99 +1,41 @@
-# 📚 Study Assistant — Multi-Agent AI System
+# Study Assistant
 
-A multi-agent study assistant built on an **A2A (Agent-to-Agent)** architecture with **MCP (Model Context Protocol)** servers. It routes user queries through a host service to specialized agents that handle research, scheduling, document management, and personalized study planning.
+A multi-agent AI system that routes your study-related queries to specialized agents for research, scheduling, document management, and personalized study planning.
 
 ---
 
-## Architecture Overview
+## Architecture
 
 ```
-User → UI → Router/Host Agent → A2A Agent Servers → MCP Servers → Data Sources
+User → UI → Host Agent → A2A Agent Servers → MCP Servers → Data Sources
 ```
-
-The system is composed of four layers:
 
 | Layer | Components |
 |---|---|
-| **Router** | Host Service — receives queries and dispatches to the right agent |
-| **A2A Agent Servers** | Scholar, Agenda, Study Plan, Documents |
-| **MCP Servers** | RAG MCP Server, PDF Reader MCP Server, ChromaDB MCP Server |
-| **Data Sources** | ChromaDB, Exam Schedule (URL), Course Syllabus (JSON) |
+| **Router** | Host Agent — receives queries and dispatches to the right agent |
+| **A2A Agents** | Scholar, Agenda, Study Plan, Documents |
+| **MCP Servers** | RAG, PDF Reader, ChromaDB, DuckDuckGo |
+| **Data Sources** | ChromaDB vector store, Exam Schedule (URL), Course Syllabus (JSON) |
 
 ---
 
-## Features
+## What You Can Do
 
-### 🔍 Research
-Ask any question and the Scholar agent gathers comprehensive information via RAG.
-> *"Research the causes of World War I"*
-
-### 📝 Study Notes
-Generates clean, structured notes on any topic — ready for revision.
-> *"Generate study notes on the water cycle"*
-
-### 📅 Exam Schedule
-Pulls your upcoming exam schedule from a live URL source.
-> *"What exams do I have this week?"*
-
-### 🗓️ Study Plan Generation
-Creates personalized study plans based on your exam schedule and course syllabus.
-> *"Create a study plan for my upcoming Database 2 exam"*
-
-### 🧠 Topic Q&A
-Answers subject-specific questions with depth, powered by your document database.
-> *"Explain how mitosis works"*
-
-### 🗂️ Document Database Management
-Manage the underlying ChromaDB document store directly.
-> *"List all documents in the database"*  
-> *"Ingest new files"*  
-> *"Delete lecture_notes.pdf"*  
-> *"Reset the database"*
-
----
-
-## Agents
-
-### Host Service (Router/Host Agent)
-The central dispatcher. Receives all user queries from the UI and routes them to the appropriate A2A agent based on intent.
-
-### Scholar A2A Server
-Handles research and Q&A tasks. Uses the **RAG MCP Server** and **PDF Reader MCP Server** to retrieve relevant information from ingested documents and answer topic-based questions.
-
-### Agenda A2A Server
-Manages exam schedule queries. Reads from the **Exam Schedule (URL)** data source and can interact with the **ChromaDB MCP Server** for context.
-
-### Study Plan A2A Server
-Generates personalized study plans. Communicates with other agents via A2A and uses the **Course Syllabus (JSON)** and exam schedule to build tailored plans.
-
-### Documents A2A Server
-Handles all document database operations — listing, ingesting, deleting, and resetting the ChromaDB store via the **ChromaDB MCP Server**.
-
----
-
-## MCP Servers
-
-| Server | Responsibility |
+| Task | Example |
 |---|---|
-| **RAG MCP Server** | Retrieval-augmented generation over ingested documents |
-| **PDF Reader MCP Server** | Extracts and processes content from PDF files |
-| **ChromaDB MCP Server** | Direct interface to the ChromaDB vector store |
-
----
-
-## Data Sources
-
-| Source | Type | Used By |
-|---|---|---|
-| **ChromaDB** | Vector database | RAG, ChromaDB MCP Server |
-| **Exam Schedule** | Live URL | Agenda agent |
-| **Course Syllabus** | JSON file | Scholar, Study Plan agent |
+| Research any topic | *"Research the causes of World War I"* |
+| Generate study notes | *"Generate study notes on the water cycle"* |
+| Check your exam schedule | *"What exams do I have this week?"* |
+| Create a study plan | *"Create a study plan for my upcoming Database 2 exam"* |
+| Ask subject-specific questions | *"Explain how mitosis works"* |
+| Manage your document database | *"List all documents"* / *"Delete lecture_notes.pdf"* |
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
+
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
 
@@ -107,32 +49,28 @@ uv sync        # or: pip install -e .
 
 ### Configuration
 
-Copy the example environment file and fill in your values:
-
 ```bash
 cp .env.example .env
 ```
 
-Refer to `.env.example` in the root for all required variables (API keys, MCP server config, etc.).
+Fill in your values — refer to `.env.example` for all required variables (API keys, MCP server config, etc.).
 
 ### Running the System
 
-Each component runs as a separate process. Start them **in this order**, each in its own terminal.
-
-**1. Activate the virtual environment** (do this in every terminal before running any command):
+Each component runs as a separate process. **Activate the virtual environment in every terminal before running any command:**
 
 ```bash
 .venv\Scripts\activate
 ```
 
-**2. Start ChromaDB:**
+Then start the components **in order**:
 
+**1. ChromaDB**
 ```bash
 chroma run --host localhost --port 8000
 ```
 
-**3. Start the A2A agent servers:**
-
+**2. A2A Agent Servers** (each in its own terminal)
 ```bash
 uv run -m src.a2a_services.servers.scholar_server
 uv run -m src.a2a_services.servers.agenda_server
@@ -140,19 +78,59 @@ uv run -m src.a2a_services.servers.study_plan_server
 uv run -m src.a2a_services.servers.documents_server
 ```
 
-**4. Start the host agent API:**
-
+**3. Host Agent API**
 ```bash
 uv run uvicorn src.host_agent.api:app --reload --port 8001
 ```
 
-**5. Launch the UI:**
-
+**4. UI**
 ```bash
 uv run streamlit run src/ui/streamlit_app.py
 ```
 
-Then open the Streamlit URL in your browser and start asking questions.
+Open the Streamlit URL in your browser and start asking questions.
+
+---
+
+## Agents
+
+### Host Agent
+The central dispatcher. Analyzes every incoming query and routes it to the appropriate specialized agent via the A2A protocol.
+
+### Scholar Agent
+Handles research and Q&A. Uses RAG over your ingested documents and falls back to web search (via DuckDuckGo MCP) when needed. Its internal graph is composed of four nodes:
+
+- **Planner** — breaks the request into tasks
+- **Supervisor** — manages task execution
+- **Researcher** — collects information
+- **Notes Generator** — formats output for PDF generation
+
+Generated study notes are saved to the `outputs/` directory and available for download in the UI. For subject-specific requests (e.g. *"notes for Operating Systems 2"*), the agent loads topic data from `syllabus.json`.
+
+### Agenda Agent
+Fetches and answers questions about your exam schedule. Reads from a user-provided URL using the PDF Reader MCP server. The system remembers the last used URL; you can view or clear it from the UI.
+
+### Study Plan Agent
+Generates personalized study plans based on your course syllabus and exam dates. If no exam date is provided, it automatically queries the Agenda Agent via A2A to retrieve the information. Subject syllabi are stored locally as JSON files.
+
+### Documents Agent
+Manages the ChromaDB knowledge base through the ChromaDB MCP server. Supported operations:
+
+- List documents currently in the database
+- Ingest new documents
+- Delete existing documents
+- Reset the database (re-indexes all files in `study_materials/`)
+
+---
+
+## MCP Servers
+
+| Server | Responsibility |
+|---|---|
+| **RAG MCP Server** | Retrieval-augmented generation over ingested documents |
+| **PDF Reader MCP Server** | Extracts and processes content from PDF files |
+| **ChromaDB MCP Server** | Direct interface to the ChromaDB vector store |
+| **DuckDuckGo MCP Server** | Provides web search capabilities through DuckDuckGo |
 
 ---
 
@@ -175,13 +153,7 @@ study-assistant/
 │   │       ├── scholar_server.py
 │   │       └── study_plan_server.py
 │   ├── agenda_agent/               # Exam schedule agent (LangGraph)
-│   │   ├── mcp/config.json
-│   │   ├── graph.py
-│   │   └── state.py
 │   ├── documents_agent/            # Document DB management agent (LangGraph)
-│   │   ├── mcp/config.json
-│   │   ├── graph.py
-│   │   └── state.py
 │   ├── host_agent/                 # Router — receives queries and dispatches to agents
 │   │   ├── api.py                  # FastAPI entrypoint
 │   │   ├── models.py
@@ -189,26 +161,9 @@ study-assistant/
 │   ├── mcp_servers/
 │   │   ├── chromadb_server/        # ChromaDB MCP server + SQLite file registry
 │   │   └── rag_server/             # RAG MCP server
-│   ├── prompts/                    # Markdown prompt files for each agent/sub-agent
-│   │   ├── agenda_agent.md
-│   │   ├── documents_agent.md
-│   │   ├── host_agent.md
-│   │   ├── notes_agent.md
-│   │   ├── planner_agent.md
-│   │   ├── researcher_agent.md
-│   │   ├── study_plan_agent.md
-│   │   ├── supervisor_agent.md
-│   │   ├── syllabus_agent.md
-│   │   └── prompt_manager.py
+│   ├── prompts/                    # Markdown prompt files for each agent
 │   ├── scholar_agent/              # Research & Q&A agent (LangGraph)
-│   │   ├── mcp/config.json
-│   │   ├── graph.py
-│   │   ├── state.py
-│   │   └── tools.py
 │   ├── study_plan_agent/           # Study plan generation agent (LangGraph)
-│   │   ├── graph.py
-│   │   ├── state.py
-│   │   └── tools.py
 │   ├── ui/
 │   │   └── streamlit_app.py        # Streamlit chat interface
 │   └── utils/
@@ -218,7 +173,3 @@ study-assistant/
 ├── pyproject.toml
 └── .env.example
 ```
-
----
-
-## License
