@@ -139,8 +139,8 @@ Manages the ChromaDB knowledge base through the ChromaDB MCP server. Supported o
 ```
 study-assistant/
 ├── course_syllabus/
-│   └── syllabus.json               # Course syllabus data used by the Study Plan agent
-├── outputs/                        # Generated outputs (study plans, notes, etc.)
+│   └── syllabus.json               # Course syllabus data used by Study Plan agent and Scholar agent
+├── outputs/                        # Generated outputs (study notes)
 ├── study_materials/                # Source documents for ingestion into ChromaDB
 ├── src/
 │   ├── a2a_services/
