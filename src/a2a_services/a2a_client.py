@@ -11,8 +11,7 @@ from a2a.types import (
     Role,
     SendMessageRequest,
     TaskState,
-    TaskPushNotificationConfig,
-    TaskStatusUpdateEvent
+    TaskPushNotificationConfig
 )
 from google.protobuf.json_format import MessageToDict
 
