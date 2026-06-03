@@ -575,58 +575,7 @@ class ChromaDB_Server:
             in_chroma = "✓" if fhash in chroma_hashes else "⚠ missing from Chroma"
             lines.append(f"{name} [{in_chroma}] — {chunks} chunks")
 
-        # for i, (name, path, chunks, created) in enumerate(rows, 1):
-        #     lines.append(
-        #         f"{i}. {name}\n"
-        #         f"   Path: {path}\n"
-        #         f"   Chunks: {chunks}\n"
-        #         f"   Created: {created}\n"
-        #     )
-
         return "\n".join(lines)
-        # ok, msg = self._check_data_directory_configured()
-        # if not ok:
-        #     return msg
- 
-        # all_docs = self.collection.get(include = ["metadatas"])
-        # if not all_docs["metadatas"]:
-        #     return "No files have been ingested yet."
- 
-        # file_info: Dict[str, dict] = {}
-        # for meta in all_docs["metadatas"]:
-        #     if not meta or "file_name" not in meta:
-        #         continue
-
-        #     key = f"{meta['file_name']} ({meta.get('file_path', '?')})"
-            
-        #     if key not in file_info:
-        #         file_info[key] = {
-        #             "file_name": meta["file_name"],
-        #             "file_path": meta.get("file_path", "?"),
-        #             "file_type": meta.get("file_type", "?"),
-        #             "creation_date": meta.get("creation_date", "?"),
-        #             "last_modified_date": meta.get("last_modified_date", "?"),
-        #             "chunks": 0,
-        #         }
-            
-        #     file_info[key]["chunks"] += 1
- 
-        # lines = [f"Ingested files ({len(file_info)} total):\n"]
-
-        # for i, info in enumerate(file_info.values(), 1):
-        #     lines.append(
-        #         f"{i}. {info['file_name']}\n"
-        #         f"   Path:     {info['file_path']}\n"
-        #         f"   Type:     {info['file_type']}\n"
-        #         f"   Created:  {info['creation_date']}\n"
-        #         f"   Modified: {info['last_modified_date']}\n"
-        #         f"   Chunks:   {info['chunks']}\n"
-        #     )
-
-        # total_chunks = sum(v["chunks"] for v in file_info.values())
-        # lines.append(f"Total chunks in DB: {total_chunks}")
-        
-        # return "\n".join(lines)
         
     async def _delete_files_from_db(self, file_names: List[str]) -> str:
         if not self.collection:
