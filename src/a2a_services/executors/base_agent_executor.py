@@ -16,8 +16,6 @@ from a2a.types import (
 )
 from uuid_utils import uuid4
 
-from src.agenda_agent.graph import AgendaAgent
-
 T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
