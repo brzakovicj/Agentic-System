@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "moodle-pdf": {
+            "transport": "stdio",
+            "command": "python",
+            "args": [
+                "-m", 
+                "src.mcp_servers.moodle_server.server"
+            ]
+        }
+    }
+}

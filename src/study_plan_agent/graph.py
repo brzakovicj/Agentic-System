@@ -3,6 +3,8 @@ import os
 import logging
 from typing import Any, AsyncIterable
 from uuid import uuid4
+from langchain.messages import trim_messages
+import tiktoken
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
@@ -36,12 +38,83 @@ class StudyPlanAgent:
             ]
         )
 
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.mcp_dir = os.path.join(self.base_dir, "mcp")
+        self.mcp_config = self.get_config("config.json")
+
+        self.mcp_client = MCPClient(self.mcp_config)
+    
+    def get_config(self, config_name: str) -> dict:
+        """Utility function to load MCP tool configuration from a JSON file."""
+        config_path = os.path.join(self.mcp_dir, config_name)
+        
+        with open(config_path, "r") as f:
+            return json.load(f)
+        
+    def _compress_course_context(
+        self,
+        course_context: dict,
+        max_subtopics_per_topic: int = 4,
+        include_hrefs: bool = False,
+    ) -> str:
+        """
+        Converts a raw course_context dict into a compact, LLM-friendly string.
+        """
+        if not course_context:
+            return ""
+
+        course_name = course_context.get("course", "Unknown course")
+        topics: list[dict] = course_context.get("topics", [])
+
+        lines: list[str] = [
+            f"Course: {course_name}",
+            f"Total topics: {len(topics)}",
+            "",
+        ]
+
+        # De-duplicate topics by (label, title) — the JSON may have duplicates
+        seen: set[tuple[str, str]] = set()
+        unique_topics: list[dict] = []
+        for t in topics:
+            key = (t.get("label", ""), t.get("title", ""))
+            if key not in seen:
+                seen.add(key)
+                unique_topics.append(t)
+
+        for idx, topic in enumerate(unique_topics, start=1):
+            label    = topic.get("label", f"T{idx}")
+            title    = topic.get("title", "Untitled")
+            subtopics: list[str] = topic.get("subtopics", [])
+
+            # Skip the first subtopic if it merely echoes the title
+            if subtopics and subtopics[0].strip() == title.strip():
+                subtopics = subtopics[1:]
+
+            truncated  = subtopics[:max_subtopics_per_topic]
+            omitted    = len(subtopics) - len(truncated)
+            sub_str    = "; ".join(truncated)
+            if omitted > 0:
+                sub_str += f"; … (+{omitted} more)"
+
+            href_str = ""
+            if include_hrefs:
+                href = topic.get("href", "")
+                href_str = f" [{href}]" if href else ""
+
+            lines.append(f"{idx}. [{label}] {title}{href_str}")
+            if sub_str:
+                lines.append(f"   Topics: {sub_str}")
+
+        return "\n".join(lines)
+
     ##############################################################################################
     # GRAPH BUILDING
     ##############################################################################################
 
     async def build_graph(self):
         result = await self.a2a_client.a2a_list_discovered_agents()
+
+        self._moodle_tools = await self.mcp_client.get_tools()
 
         if result["status"] == "success":
             for agent in result["agents"]:
@@ -50,14 +123,40 @@ class StudyPlanAgent:
         builder = StateGraph(StudyPlanState)
 
         # Nodes
+        builder.add_node("syllabus_matcher", self.syllabus_matcher)
+        builder.add_node("syllabus_url", self.syllabus_url)
         builder.add_node("syllabus_loader", self.syllabus_loader)
+        builder.add_node("syllabus_loader_tools", ToolNode(self._moodle_tools))
+
         builder.add_node("study_plan_node", self.study_plan_node)
         builder.add_node("study_plan_tools", ToolNode(self._tools))
         builder.add_node("agenda_agent", self.agenda_agent)
 
         # Edges
-        builder.set_entry_point("syllabus_loader")
-        builder.add_edge("syllabus_loader", "study_plan_node")
+        builder.set_entry_point("syllabus_matcher")
+
+        builder.add_conditional_edges(
+            "syllabus_matcher",
+            self._route_matcher,
+            {
+                "found": "study_plan_node",
+                "not_found": "syllabus_url",
+                "not_found_final": "study_plan_node",
+            }
+        )
+
+        builder.add_edge("syllabus_url", "syllabus_loader")
+
+        builder.add_conditional_edges(
+            "syllabus_loader",
+            self._route_loader,
+            {
+                "tools": "syllabus_loader_tools",
+                "done": "syllabus_matcher"
+            }
+        )
+
+        builder.add_edge("syllabus_loader_tools", "syllabus_loader")
 
         builder.add_conditional_edges(
             "study_plan_node",
@@ -78,6 +177,23 @@ class StudyPlanAgent:
         if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
             return "tools"
         return END
+    
+    def _route_matcher(self, state: StudyPlanState) -> str:
+        if state.get("course_context"):
+            return "found"
+
+        if state.get("syllabus_loaded"):
+            return "not_found_final"
+
+        return "not_found"
+    
+    def _route_loader(self, state: StudyPlanState) -> str:
+        last_msg = state["messages"][-1]
+        
+        if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+            return "tools"
+        
+        return "done"
 
     ##############################################################################################
     # NODES
@@ -90,8 +206,8 @@ class StudyPlanAgent:
         with open(syllabi_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    async def syllabus_loader(self, state: StudyPlanState):
-        query = state["messages"][-1].content if state["messages"] else ""
+    async def syllabus_matcher(self, state: StudyPlanState):
+        query = state["user_input"] or ""
         syllabi = self._load_syllabi()
         courses = syllabi["courses"]
 
@@ -116,7 +232,87 @@ class StudyPlanAgent:
         except Exception as e:
             print(f"Study plan syllabus loader error: {e}")
 
+        print("\n--- syllabus_matcher NODE ---")
+        print(type(response).__name__, getattr(response, "content", ""))
+        if hasattr(response, "tool_calls"):
+            print("TOOL CALLS:", response.tool_calls)
+        print("-----------------------\n")
+
         return {"course_context": None}
+    
+    async def syllabus_url(self, state: StudyPlanState):
+        llm = self._llm_factory.get_remote_llm()
+
+        system_prompt = self._prompt_manager.get(
+            "agenda_init_agent",
+            user_query=state["user_input"] or ""
+        )
+
+        messages = [SystemMessage(content=system_prompt)]
+
+        try:
+            response = await llm.ainvoke(messages)
+            response = response.content.strip()
+            logger.info("LLM URL %s", response)
+        except Exception:
+            logger.exception("syllabus_url: LLM call failed")
+            response = "NONE"
+
+        url: str | None = response if response != "NONE" else None
+        
+        if not url:
+            url = interrupt({
+                "message": (
+                    "Please send the link to the course syllabus"
+                    "(e.g. https://imi.pmf.kg.ac.rs/moodle/course/view.php?id=572)."
+                ),
+                "type": "text_input",
+                "placeholder": "https://imi.pmf.kg.ac.rs/moodle/course/view.php?id=572",
+            })
+
+            logger.info("INTERRUPT URL %s", url)
+
+        return {
+            "messages": [AIMessage(name="syllabus_url", content="Successfully initialize node.")],
+            "syllabus_url": url,
+        }
+
+    async def syllabus_loader(self, state: StudyPlanState):
+        llm = self._llm_factory.get_tool_llm(
+            tier=ModelTier.REMOTE, tools=self._moodle_tools
+        )
+
+        tool_context = "\n".join(
+            f"{tool.name}: {tool.description}" 
+            for tool in self._moodle_tools
+        )
+
+        system_prompt = self._prompt_manager.get(
+            "syllabus_loader_agent",
+            tool_context=tool_context, 
+            user_input=state["user_input"] if state["user_input"] else "", 
+            course_url=state["syllabus_url"] or "https://imi.pmf.kg.ac.rs/moodle/course/view.php?id=572", 
+            current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+
+        messages = [SystemMessage(content=system_prompt)] + state["messages"]
+
+        try:
+            response: AIMessage = await llm.ainvoke(messages)
+        except Exception as exc:
+            logger.exception(f"StudyPlanAgent exception: {exc}")
+            raise
+
+        print("\n--- syllabus_loader NODE ---")
+        print(type(response).__name__, getattr(response, "content", ""))
+        if hasattr(response, "tool_calls"):
+            print("TOOL CALLS:", response.tool_calls)
+        print("-----------------------\n")
+
+        return {
+            "messages": [response],
+            "syllabus_loaded": True,
+        }
 
     async def agenda_agent(self, state: StudyPlanState):
         context_id = state.get("agenda_context_id") or str(uuid4())
@@ -223,9 +419,17 @@ class StudyPlanAgent:
             for tool in self._tools
         )
 
+        # course_context_str = self._compress_course_context(
+        #     state.get("course_context"),
+        #     max_subtopics_per_topic=4,   # tune: lower = fewer tokens
+        #     include_hrefs=False,          # enable if LLM needs to cite URLs
+        # )
+
         course_context_str = ""
         if state.get("course_context"):
             course_context_str = json.dumps(state["course_context"], ensure_ascii=False, indent=2)
+
+        logger.info(f"\n--- COMPRESSED COURSE CONTEXT: {course_context_str} ---")
 
         system_prompt = self._prompt_manager.get(
             "study_plan_agent",
@@ -236,6 +440,17 @@ class StudyPlanAgent:
             course_context=course_context_str,
         )
 
+        # enc = tiktoken.get_encoding("cl100k_base")
+
+        # trimmed = trim_messages(
+        #     state["messages"],
+        #     max_tokens=4000,       # koliko tokena smeš da pošalješ u historiji
+        #     strategy="last",       # zadrži najnovije poruke
+        #     token_counter=lambda messages: sum(len(enc.encode(m.content)) for m in messages),     # tokenizer koji broji tokene
+        #     include_system=False,  # system prompt dodaješ ti posebno
+        # )
+
+        # messages = [SystemMessage(content=system_prompt)] + trimmed
         messages = [SystemMessage(content=system_prompt)] + state["messages"]
 
         try:
@@ -284,7 +499,9 @@ class StudyPlanAgent:
                 agenda_data=[],
                 course_context=None,
                 agenda_context_id=None,
-                agenda_message_id=None
+                agenda_message_id=None,
+                syllabus_loaded=False,
+                syllabus_url=None,
             )
 
         last_ai_content = ""

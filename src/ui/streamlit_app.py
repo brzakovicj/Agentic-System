@@ -21,6 +21,9 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR = Path("outputs")
 OUTPUTS_DIR.mkdir(exist_ok=True)
 
+MOODLE_DIR = Path("moodle_materials")
+MOODLE_DIR.mkdir(exist_ok=True)
+
 st.set_page_config(page_title="Study Buddy", page_icon="✨", layout="wide")
 
 # -----------------------------------------------------------------------------
@@ -205,7 +208,7 @@ with st.sidebar:
         
     st.divider()
 
-    st.subheader("📥 Generated Outputs")
+    st.subheader("📥 Study notes")
 
     output_files = sorted(
         OUTPUTS_DIR.glob("*"),
@@ -217,6 +220,32 @@ with st.sidebar:
         st.caption("No generated outputs yet.")
 
     for file_path in output_files[:10]:
+        try:
+            with open(file_path, "rb") as f:
+                st.download_button(
+                    label=f"⬇️ {file_path.name}",
+                    data=f,
+                    file_name=file_path.name,
+                    key=f"download_{file_path.name}",
+                    disabled=st.session_state.is_busy,
+                )
+        except Exception:
+            pass
+
+    st.divider()
+
+    st.subheader("📥 Moodle materials")
+
+    moodle_files = sorted(
+        MOODLE_DIR.glob("*"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+
+    if not moodle_files:
+        st.caption("No downloaded materials yet.")
+
+    for file_path in moodle_files[:10]:
         try:
             with open(file_path, "rb") as f:
                 st.download_button(

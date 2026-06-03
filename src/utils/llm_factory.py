@@ -106,7 +106,9 @@ class LLMFactory:
                 default_headers={
                     "Content-Type": "application/json",
                     "Authorization": os.getenv("REMOTE_SERVER_AUTH_TOKEN"),
-                }
+                },
+                timeout=300.0,
+                streaming=True,
             )
         
         return self._remote_llm
