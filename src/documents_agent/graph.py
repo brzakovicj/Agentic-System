@@ -10,7 +10,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from langgraph.types import RunnableConfig, interrupt
 from src.documents_agent.state import DocumentsState
-from src.prompts.prompt_manager import PromptManager
+from src.utils.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage

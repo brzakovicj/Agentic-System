@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from langgraph.types import Command, RunnableConfig, interrupt
 from src.a2a_services.a2a_client import A2A_Client
 from src.study_plan_agent.state import StudyPlanState
-from src.prompts.prompt_manager import PromptManager
+from src.utils.prompt_manager import PromptManager
 from src.study_plan_agent.tools import CourseMatchSchema, handoff_to_agent
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient

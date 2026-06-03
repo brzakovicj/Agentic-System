@@ -10,7 +10,7 @@ from fastmcp import FastMCP
 from fastmcp.prompts import Message
 
 # Prompt manager
-from src.prompts.prompt_manager import PromptManager
+from src.utils.prompt_manager import PromptManager
 
 # ChromaDB imports
 import chromadb

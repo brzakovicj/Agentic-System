@@ -4,7 +4,7 @@ from uuid import uuid4
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage
 from src.a2a_services.a2a_client import A2A_Client
-from src.prompts.prompt_manager import PromptManager
+from src.utils.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory
 
 CAPABILITIES_MESSAGE = """\

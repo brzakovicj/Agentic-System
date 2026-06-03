@@ -13,7 +13,7 @@ from langgraph.types import Command, RunnableConfig, interrupt
 
 from src.agenda_agent.state import AgendaState
 
-from src.prompts.prompt_manager import PromptManager
+from src.utils.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
 from src.utils.url_cache import load_cached_url, save_cached_url

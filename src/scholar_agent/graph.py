@@ -10,7 +10,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import RunnableConfig
 from src.scholar_agent.state import ScholarState
 from src.scholar_agent.tools import CourseMatchSchema, PlannerTaskSchema, create_pdf, handoff_to_subagent
-from src.prompts.prompt_manager import PromptManager
+from src.utils.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
 
