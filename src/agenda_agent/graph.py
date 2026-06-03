@@ -106,7 +106,7 @@ class AgendaAgent:
         llm = self._llm_factory.get_remote_llm()
 
         system_prompt = self._prompt_manager.get(
-            "agenda_init_agent",
+            "url_agent",
             user_query=state["user_input"] or ""
         )
 
