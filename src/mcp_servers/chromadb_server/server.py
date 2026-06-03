@@ -110,9 +110,6 @@ class ChromaDB_Server:
             
             count = self.collection.count()
             logger.info(f"ChromaDB initialized successfully. Vector database has {count} documents.")
-
-            if count == 0:
-                self._auto_ingest_files()
         except Exception as e:
             error_msg = f"Failed to initialize ChromaDB: {str(e)}"
             logger.error(error_msg)
