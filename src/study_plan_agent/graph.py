@@ -3,8 +3,6 @@ import os
 import logging
 from typing import Any, AsyncIterable
 from uuid import uuid4
-from langchain.messages import trim_messages
-import tiktoken
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
@@ -440,17 +438,6 @@ class StudyPlanAgent:
             course_context=course_context_str,
         )
 
-        # enc = tiktoken.get_encoding("cl100k_base")
-
-        # trimmed = trim_messages(
-        #     state["messages"],
-        #     max_tokens=4000,       # koliko tokena smeš da pošalješ u historiji
-        #     strategy="last",       # zadrži najnovije poruke
-        #     token_counter=lambda messages: sum(len(enc.encode(m.content)) for m in messages),     # tokenizer koji broji tokene
-        #     include_system=False,  # system prompt dodaješ ti posebno
-        # )
-
-        # messages = [SystemMessage(content=system_prompt)] + trimmed
         messages = [SystemMessage(content=system_prompt)] + state["messages"]
 
         try:
