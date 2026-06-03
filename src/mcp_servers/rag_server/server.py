@@ -2,7 +2,6 @@ import os
 import logging
 import numpy as np
 from pathlib import Path
-from textwrap import dedent
 from dotenv import load_dotenv
 
 # FastMCP imports
@@ -14,7 +13,6 @@ from src.utils.prompt_manager import PromptManager
 
 # ChromaDB imports
 import chromadb
-from chromadb.config import Settings
 
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from transformers import logging as hf_logging
@@ -218,43 +216,6 @@ class RAG_Server:
                 "results": []
             }
 
-        #     # Sort by score descending
-        #     top_indices = np.argsort(scores)[-top_n:][::-1]
-
-        #     # Apply same ordering to everything
-        #     documents = [documents[i] for i in top_indices]
-        #     metadatas = [metadatas[i] for i in top_indices]
-        #     distances = [distances[i] for i in top_indices]
-        #     scores = [scores[i] for i in top_indices]
-
-            
-        #     logger.info(f"Query '{query}' returned {len(documents)} results")
-
-        #     return {
-        #         "query": query,
-        #         "error": None,
-        #         "results": [
-        #             {
-        #                 "content": doc,
-        #                 "file_name": metadata.get("file_name", 'Unknown'),
-        #                 "source": metadata.get("file_path", 'Unknown'),
-        #                 "page_number": metadata.get("page_number", 'Unknown'),
-        #                 "similarity_score": f"{1 - distance:.3f}",
-        #                 "relevance_score": f"{score:.3f}",
-        #             }
-        #             for doc, metadata, distance, score in zip(documents, metadatas, distances, scores)
-        #         ]
-        #     }
-            
-        # except Exception as e:
-        #     error_msg = f"Error querying documents: {str(e)}"
-        #     logger.error(error_msg)
-        #     return {
-        #         "query": query,
-        #         "error": error_msg,
-        #         "results": []
-        #     }
-
     #####################################################################################################################
     #################################################### MCP PROMPTS ####################################################
     #####################################################################################################################
@@ -307,9 +268,7 @@ async def query_documents(query: str, n_results: int = 5, top_n: int = 3) -> dic
           the information is not in the knowledge base.
         - Consider increasing n_results and top_n for broad topics requiring wider coverage.
     """
-    #n_results = 5
     include_metadata = True
-    #top_n = 3
     return await rag._query_documents(query=query, n_results=n_results, include_metadata=include_metadata, top_n=top_n)
 
 @mcp.prompt()
