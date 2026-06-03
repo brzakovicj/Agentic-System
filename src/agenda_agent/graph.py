@@ -121,15 +121,19 @@ class AgendaAgent:
             response = "NONE"
 
         url: str | None = response if response != "NONE" else None
-
-         # 2. Fall back to cached URL for this thread
-        if not url:
-            # url = load_cached_url()
-            # if url:
-            #     logger.info("CACHE URL %s", url)
-            url = state.get("agenda_url", None)
-            logger.info("CACHE URL %s", url)
         
+        # 1. Fall back to persisted state
+        if not url:
+            url = state.get("agenda_url", None)
+            logger.info("STATE URL %s", url)
+
+        # 2. Fall back to cached URL for this thread
+        if not url:
+            url = load_cached_url()
+            if url:
+                logger.info("CACHE URL %s", url)
+        
+        # 3. Fall back interrupt
         if not url:
             url = interrupt({
                 "message": (
