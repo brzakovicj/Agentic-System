@@ -11,11 +11,12 @@ from dotenv import load_dotenv
 from langgraph.types import Command, RunnableConfig, interrupt
 from src.a2a_services.a2a_client import A2A_Client
 from src.study_plan_agent.state import StudyPlanState
+from src.utils.tool_formatter import llm_describe_tool_call
 from src.utils.prompt_manager import PromptManager
 from src.study_plan_agent.tools import CourseMatchSchema, handoff_to_agent
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 logger = logging.getLogger(__name__)
 
@@ -527,10 +528,11 @@ class StudyPlanAgent:
                                         print(f"  {tc['args']}")
                                     print()
 
+                                    description = await llm_describe_tool_call(tc)
                                     yield {
                                         'is_task_complete': False,
                                         'require_user_input': False,
-                                        'content': 'Calling tools...',
+                                        'content': description,
                                     }
 
                                 elif msg.content:
@@ -540,27 +542,6 @@ class StudyPlanAgent:
                                         'require_user_input': False,
                                         'content': last_ai_content,
                                     }
-
-                            elif isinstance(msg, ToolMessage):
-                                print(
-                                    f"[Tool result: {msg.name}]"
-                                )
-                                print()
-                                
-                                if (isinstance(msg.content, list)):
-                                    tool_parts = msg.content
-                                    msg_content = "\n\n".join(
-                                        m.content for m in tool_parts
-                                        if hasattr(m, "content") and m.content
-                                    )
-                                else:
-                                    msg_content = msg.content or "[Tool returned no content]"
-                                
-                                yield {
-                                    'is_task_complete': False,
-                                    'require_user_input': False,
-                                    'content': 'Tool responded with results: \n' + msg_content,
-                                }
 
             completed_normally = True
 

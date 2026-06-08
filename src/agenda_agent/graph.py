@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, AsyncIterable
 
 from dotenv import load_dotenv
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -13,6 +13,7 @@ from langgraph.types import Command, RunnableConfig, interrupt
 
 from src.agenda_agent.state import AgendaState
 
+from src.utils.tool_formatter import llm_describe_tool_call
 from src.utils.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
@@ -149,7 +150,7 @@ class AgendaAgent:
         save_cached_url(url)
 
         return {
-            "messages": [AIMessage(name="agenda_init", content="Successfully initialize node.")],
+            "messages": [AIMessage(name="agenda_init", content="Exam schedule URL initialized.")],
             "agenda_url": url,
         }
 
@@ -263,10 +264,11 @@ class AgendaAgent:
                                         print(f"  {tc['args']}")
                                     print()
 
+                                    description = await llm_describe_tool_call(tc)
                                     yield {
                                         'is_task_complete': False,
                                         'require_user_input': False,
-                                        'content': 'Calling tools...',
+                                        'content': description,
                                     }
 
                                 elif msg.content:
@@ -276,27 +278,6 @@ class AgendaAgent:
                                         'require_user_input': False,
                                         'content': last_ai_content,
                                     }
-
-                            elif isinstance(msg, ToolMessage):
-                                print(
-                                    f"[Tool result: {msg.name}]"
-                                )
-                                print()
-                                
-                                if (isinstance(msg.content, list)):
-                                    tool_parts = msg.content
-                                    msg_content = "\n\n".join(
-                                        m.content for m in tool_parts
-                                        if hasattr(m, "content") and m.content
-                                    )
-                                else:
-                                    msg_content = msg.content or "[Tool returned no content]"
-                                
-                                yield {
-                                    'is_task_complete': False,
-                                    'require_user_input': False,
-                                    'content': 'Tool responded with results: \n' + msg_content,
-                                }
 
             completed_normally = True
 

@@ -3,13 +3,14 @@ import json
 from datetime import datetime
 from dotenv import load_dotenv
 from typing import Any, AsyncIterable
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import RunnableConfig
 from src.scholar_agent.state import ScholarState
 from src.scholar_agent.tools import CourseMatchSchema, PlannerTaskSchema, create_pdf, handoff_to_subagent
+from src.utils.tool_formatter import llm_describe_tool_call
 from src.utils.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
@@ -417,10 +418,11 @@ class ScholarAgent:
                                     print(f"  {tc['args']}")
                                 print()
 
+                                description = await llm_describe_tool_call(tc)
                                 yield {
                                     'is_task_complete': False,
                                     'require_user_input': False,
-                                    'content': 'Calling tools...',
+                                    'content': description,
                                 }
 
                             elif msg.content:
@@ -430,27 +432,6 @@ class ScholarAgent:
                                     'require_user_input': False,
                                     'content': last_ai_content,
                                 }
-
-                        elif isinstance(msg, ToolMessage):
-                            print(
-                                f"[Tool result: {msg.name}]"
-                            )
-                            print()
-                            
-                            if (isinstance(msg.content, list)):
-                                tool_parts = msg.content
-                                msg_content = "\n\n".join(
-                                    m.content for m in tool_parts
-                                    if hasattr(m, "content") and m.content
-                                )
-                            else:
-                                msg_content = msg.content or "[Tool returned no content]"
-                            
-                            yield {
-                                'is_task_complete': False,
-                                'require_user_input': False,
-                                'content': 'Tool responded with results: \n' + msg_content,
-                            }
 
             completed_normally = True
 
