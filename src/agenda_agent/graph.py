@@ -250,6 +250,7 @@ class AgendaAgent:
                             "is_task_complete": False,
                             "require_user_input": True,
                             "content": iv["message"] if iv["message"] else "Input required.",
+                            "call_type": None,
                         }
                 else:
                     # updates je dict: {node_name: {"messages": [...]}}
@@ -269,6 +270,7 @@ class AgendaAgent:
                                         'is_task_complete': False,
                                         'require_user_input': False,
                                         'content': description,
+                                        "call_type": "tool",
                                     }
 
                                 elif msg.content:
@@ -277,6 +279,7 @@ class AgendaAgent:
                                         'is_task_complete': False,
                                         'require_user_input': False,
                                         'content': last_ai_content,
+                                        "call_type": None,
                                     }
 
             completed_normally = True
@@ -288,6 +291,7 @@ class AgendaAgent:
                 "is_task_complete": True,
                 "require_user_input": False,
                 "content": f"Error: {str(exc)}",
+                "call_type": None,
             }
 
         finally:
@@ -296,4 +300,5 @@ class AgendaAgent:
                     "is_task_complete": True,
                     "require_user_input": False,
                     "content": last_ai_content,
+                    "call_type": None,
                 }

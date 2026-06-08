@@ -153,6 +153,7 @@ class DocumentsAgent:
                                     'is_task_complete': False,
                                     'require_user_input': False,
                                     'content': description,
+                                    "call_type": "tool",
                                 }
 
                             elif msg.content:
@@ -161,6 +162,7 @@ class DocumentsAgent:
                                     'is_task_complete': False,
                                     'require_user_input': False,
                                     'content': last_ai_content,
+                                    "call_type": None,
                                 }
 
             completed_normally = True
@@ -172,6 +174,7 @@ class DocumentsAgent:
                 "is_task_complete": True,
                 "require_user_input": False,
                 "content": f"Error: {str(exc)}",
+                "call_type": None,
             }
 
         finally:
@@ -180,6 +183,7 @@ class DocumentsAgent:
                     "is_task_complete": True,
                     "require_user_input": False,
                     "content": last_ai_content,
+                    "call_type": None,
                 }
 
     async def close(self):

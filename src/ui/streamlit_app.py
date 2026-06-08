@@ -50,6 +50,26 @@ SUGGESTIONS = {
     ),
 }
 
+# View modes — order matters (used in segmented_button)
+VIEW_MODES = {
+    "Default": {
+        "icon": ":material/chat:",
+        "description": "Shows only your messages and final answers.",
+        # Which call_types to SHOW during streaming (None = always show)
+        "show_call_types": set(),   # empty = only show call_type=None events
+    },
+    "Tool calls": {
+        "icon": ":material/build:",
+        "description": "Shows tool invocations during processing.",
+        "show_call_types": {"tool"},
+    },
+    "Agent calls": {
+        "icon": ":material/smart_toy:",
+        "description": "Shows which agents are called.",
+        "show_call_types": {"agent"},
+    },
+}
+
 # Clear URL cache once per app start (not on every rerun)
 if "app_initialized" not in st.session_state:
     clear_cached_url()
@@ -69,6 +89,9 @@ if "pending_message" not in st.session_state:
 
 if "auto_user_message" not in st.session_state:
     st.session_state.auto_user_message = None
+
+if "view_mode" not in st.session_state:
+    st.session_state.view_mode = "Default"
 
 # -----------------------------------------------------------------------------
 # UI components
@@ -99,6 +122,31 @@ def docs_info_dialog():
         "Deleting files here only removes them from the study_materials folder. "
         "Reset the database to fully remove embedded documents."
     )
+
+# -----------------------------------------------------------------------------
+# View mode helpers
+ 
+ 
+def _should_show_update(call_type: str | None, view_mode: str) -> bool:
+    """
+    Return True if an update event with the given call_type should be
+    displayed to the user, given the active view_mode.
+ 
+    Logic:
+      - call_type is None  → always show (generic progress message)
+      - call_type "tool"   → show only in "Tool calls" mode
+      - call_type "agent"  → show only in "Agent calls" mode
+    """
+    if call_type is None:
+        return True
+    return call_type in VIEW_MODES[view_mode]["show_call_types"]
+
+def _update_icon(call_type: str | None) -> str:
+    if call_type == "tool":
+        return "🔧"
+    if call_type == "agent":
+        return "🤖"
+    return "⏳"
 
 # -----------------------------------------------------------------------------
 # Sidebar
@@ -268,6 +316,37 @@ title_row = st.container(horizontal=True, vertical_alignment="bottom")
 with title_row:
     st.title("Study Buddy", anchor=False, width="stretch")
 
+
+# -----------------------------------------------------------------------------
+# View mode selector
+# Placed right below the title, above the chat.
+# Disabled while a request is in flight so the user cannot switch mid-stream.
+ 
+with st.container():
+    mode_col, desc_col = st.columns([3, 5], vertical_alignment="center")
+ 
+    with mode_col:
+        selected_mode = st.segmented_control(
+            label="View mode",
+            label_visibility="collapsed",
+            options=list(VIEW_MODES.keys()),
+            default=st.session_state.view_mode,
+            key="view_mode_control",
+            disabled=st.session_state.is_busy,
+        )
+ 
+        if selected_mode and selected_mode != st.session_state.view_mode:
+            st.session_state.view_mode = selected_mode
+            st.rerun()
+ 
+    with desc_col:
+        mode_info = VIEW_MODES[st.session_state.view_mode]
+        icon = mode_info["icon"]
+        desc = mode_info["description"]
+        st.caption(f"{icon} {desc}")
+ 
+st.divider()
+
 # -----------------------------------------------------------------------------
 # Initial screen logic
 
@@ -401,6 +480,7 @@ if user_message:
 
         final_response = ""
         error_occurred = False
+        current_view_mode = st.session_state.view_mode
 
         try:
             with st.spinner("Working on it..."):
@@ -422,9 +502,12 @@ if user_message:
                     data = json.loads(event.data)
 
                     content = data.get("content", "")
+                    call_type = data.get("call_type", None)
 
                     if event.event == "update":
-                        placeholder.info(content)
+                        if _should_show_update(call_type, current_view_mode):
+                            icon = _update_icon(call_type)
+                            placeholder.info(f"{icon} {content}")
 
                     elif event.event == "final":
                         placeholder.empty()

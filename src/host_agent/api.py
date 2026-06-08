@@ -63,6 +63,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                     "data": json.dumps({
                         "content": event["content"],
                         "context_id": event.get("context_id"),  # pass back to client
+                        "call_type":  event.get("call_type"),
                     }),
                 }
  

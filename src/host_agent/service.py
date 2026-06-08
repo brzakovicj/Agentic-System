@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from uuid import uuid4
 from dotenv import load_dotenv
@@ -6,6 +7,8 @@ from langchain_core.messages import SystemMessage
 from src.a2a_services.a2a_client import A2A_Client
 from src.utils.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory
+
+logger = logging.getLogger(__name__)
 
 CAPABILITIES_MESSAGE = """\
 ## 👋 Here's what I can help you with:
@@ -178,6 +181,7 @@ class HostAgentService:
                     "type": "final",
                     "content": CAPABILITIES_MESSAGE,
                     "context_id": context_id,
+                    "call_type": None,
                 }
                 return
 
@@ -186,10 +190,20 @@ class HostAgentService:
                     "type": "final",
                     "content": SOMETHING_WENT_WRONG_MESSAGE,
                     "context_id": context_id,
+                    "call_type": None,
                 }
                 return
 
             message_id = str(uuid4())
+            agent_name = self._agent_name_from_url(selected_agent)
+
+            # Emit an "agent call" notification — visible only in agent-calls mode
+            yield {
+                "type": "update",
+                "content": f"Calling **{agent_name}** agent…",
+                "context_id": context_id,
+                "call_type": "agent",
+            }
 
             self._active_conversations[context_id] = {
                 "selected_agent": selected_agent,
@@ -205,15 +219,21 @@ class HostAgentService:
 
             # UPDATE
             if result["status"] == "working":
-                update = result["response"]["data"]
+                update = result["response"]["data"]["status"]
                 message = update.get("message", {})
+                metadata = message.get("metadata", {})
                 parts = message.get("parts", [])
+                text = parts[0]["text"] if parts else "Agent is working…"
+                call_type = metadata.get("call_type")
+
+                logger.info(f"Update received for context {context_id}: {text}")
 
                 if parts:
                     yield {
                         "type": "update",
                         "content": parts[0].get("text", "Agent is working..."),
                         "context_id": context_id,
+                        "call_type": call_type,
                     }
 
             # FINAL
@@ -227,6 +247,7 @@ class HostAgentService:
                             "type": "final",
                             "content": parts[0]["text"],
                             "context_id": context_id,
+                            "call_type": None,
                         }
                     
                     del self._active_conversations[context_id]
@@ -238,6 +259,7 @@ class HostAgentService:
                             "type": "final",
                             "content": parts[0]["text"],
                             "context_id": context_id,
+                            "call_type": None,
                         }
                     
                     del self._active_conversations[context_id]
@@ -251,6 +273,21 @@ class HostAgentService:
                             "type": "input_required",  # <-- distinct type so the caller knows
                             "content": parts[0]["text"] if parts else "Input required.",
                             "context_id": context_id,  # caller must echo this back
+                            "call_type": None,
                         }
 
         return
+
+    # ---------------------------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------------------------
+    
+    def _agent_name_from_url(self, url: str) -> str:
+        """Return a human-readable agent name from its URL."""
+        mapping = {
+            os.getenv("SCHOLAR_URL", ""): "Scholar",
+            os.getenv("AGENDA_URL", ""): "Agenda",
+            os.getenv("STUDY_PLAN_URL", ""): "Study Plan",
+            os.getenv("DOCUMENTS_URL", ""): "Documents",
+        }
+        return mapping.get(url, url)

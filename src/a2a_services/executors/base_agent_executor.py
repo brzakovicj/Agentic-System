@@ -116,6 +116,7 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
                 is_task_complete = item['is_task_complete']
                 require_user_input = item['require_user_input']
                 content = item["content"]
+                call_type = item["call_type"]
 
                 agent_message = Message(
                     message_id=str(uuid4()),
@@ -123,6 +124,7 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
                     parts=[Part(text=content)],
                     context_id=task.context_id,
                     task_id=task.id,
+                    metadata={"call_type": call_type} if call_type else {},
                 )
 
                 if not is_task_complete and not require_user_input:

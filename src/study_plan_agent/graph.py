@@ -3,6 +3,7 @@ import os
 import logging
 from typing import Any, AsyncIterable
 from uuid import uuid4
+from langgraph.types import StreamWriter
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
@@ -514,6 +515,7 @@ class StudyPlanAgent:
                             "is_task_complete": False,
                             "require_user_input": True,
                             "content": iv["message"] if iv["message"] else "Input required.",
+                            "call_type": None,
                         }
                 else:
                     # updates je dict: {node_name: {"messages": [...]}}
@@ -523,16 +525,17 @@ class StudyPlanAgent:
                         for msg in messages:
                             if isinstance(msg, AIMessage):
                                 if msg.tool_calls:
+                                    call_type = "tool" 
                                     for tc in msg.tool_calls:
-                                        print(f"  TOOL CALL [{node_name}]: {tc['name']}")
-                                        print(f"  {tc['args']}")
-                                    print()
+                                        if tc['name'] == "handoff_to_agent":
+                                            call_type = "agent"       
 
                                     description = await llm_describe_tool_call(tc)
                                     yield {
                                         'is_task_complete': False,
                                         'require_user_input': False,
                                         'content': description,
+                                        "call_type": call_type,
                                     }
 
                                 elif msg.content:
@@ -541,6 +544,7 @@ class StudyPlanAgent:
                                         'is_task_complete': False,
                                         'require_user_input': False,
                                         'content': last_ai_content,
+                                        "call_type": None,
                                     }
 
             completed_normally = True
@@ -552,6 +556,7 @@ class StudyPlanAgent:
                 "is_task_complete": True,
                 "require_user_input": False,
                 "content": f"Error: {str(exc)}",
+                "call_type": None,
             }
 
         finally:
@@ -560,4 +565,5 @@ class StudyPlanAgent:
                     "is_task_complete": True,
                     "require_user_input": False,
                     "content": last_ai_content,
+                    "call_type": None,
                 }
