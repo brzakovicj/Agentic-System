@@ -3,6 +3,7 @@ from src.agenda_agent.graph import AgendaAgent
 from src.documents_agent.graph import DocumentsAgent
 from src.scholar_agent.graph import ScholarAgent
 from src.study_plan_agent.graph import StudyPlanAgent
+from src.host_agent.host_agent import HostAgent
 
 class AgendaAgentExecutor(BaseAgentExecutor[AgendaAgent]):
     async def _create_agent(self) -> AgendaAgent:
@@ -27,3 +28,7 @@ class StudyPlanAgentExecutor(BaseAgentExecutor[StudyPlanAgent]):
         agent = StudyPlanAgent()
         await agent.build_graph()
         return agent
+    
+class HostAgentExecutor(BaseAgentExecutor[HostAgent]):
+    async def _create_agent(self) -> HostAgent:
+        return HostAgent()

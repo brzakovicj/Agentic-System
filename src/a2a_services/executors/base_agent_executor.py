@@ -103,7 +103,7 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
         task_id = task.id
         context_id = context.context_id or task_id
 
-        updater = TaskUpdater(event_queue, task_id, task.context_id)
+        updater = TaskUpdater(event_queue, task_id, context_id)
         await self._track_task(task_id)
 
         try:
@@ -126,7 +126,7 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
                     message_id=str(uuid4()),
                     role=Role.ROLE_AGENT,
                     parts=[Part(text=content)],
-                    context_id=task.context_id,
+                    context_id=context_id,
                     task_id=task.id,
                     metadata={
                         "call_type": call_type,
@@ -153,7 +153,21 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
                         [Part(text=content)],
                         name='conversion_result',
                     )
-                    await updater.complete()
+                    final_message = Message(
+                        message_id=str(uuid4()),
+                        role=Role.ROLE_AGENT,
+                        parts=[Part(text="Agent execution complete.")],
+                        context_id=context_id,
+                        task_id=task.id,
+                        metadata={
+                            "call_type": call_type,
+                            "node_id": node_id,
+                            "node_name": node_name,
+                            "node_status": node_status,
+                            "parent_id": parent_id,
+                        },
+                    )
+                    await updater.complete(message=final_message)
                     logger.info("[%s] Task %s completed.", self.__class__.__name__, task_id)
                     break
 
@@ -188,3 +202,10 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
         )
         await updater.cancel()
         logger.info("[%s] Task %s cancelled.", self.__class__.__name__, task.id)
+
+    async def stream(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> None:
+        await self.execute(context, event_queue)
