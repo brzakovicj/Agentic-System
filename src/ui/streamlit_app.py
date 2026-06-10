@@ -509,6 +509,7 @@ if user_message:
                             tree_expander.empty()
                         final_response = content
                         st.session_state.context_id = data.get("context_id")
+                        st.session_state.execution_graph = []
 
                     elif event.event == "input_required":
                         placeholder.empty()

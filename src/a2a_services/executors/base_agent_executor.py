@@ -153,7 +153,21 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
                         [Part(text=content)],
                         name='conversion_result',
                     )
-                    await updater.complete()
+                    final_message = Message(
+                        message_id=str(uuid4()),
+                        role=Role.ROLE_AGENT,
+                        parts=[Part(text="Task complete.")],
+                        context_id=task.context_id,
+                        task_id=task.id,
+                        metadata={
+                            "call_type": call_type,
+                            "node_id": node_id,
+                            "node_name": node_name,
+                            "node_status": node_status,
+                            "parent_id": parent_id,
+                        },
+                    )
+                    await updater.complete(final_message)
                     logger.info("[%s] Task %s completed.", self.__class__.__name__, task_id)
                     break
 

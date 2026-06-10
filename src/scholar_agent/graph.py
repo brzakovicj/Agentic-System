@@ -415,6 +415,11 @@ class ScholarAgent:
                 "parent_id": _AGENT_PARENT,
             }
             
+            _INTERNAL_NODES = {"supervisor_tools", "researcher_tools"}
+            _TOOL_NODE_PARENT = {
+                "supervisor_tools": "supervisor",
+                "researcher_tools": "researcher_node",
+            }
             async for item in self.graph.astream(
                 input = state,
                 stream_mode="updates",
@@ -422,22 +427,28 @@ class ScholarAgent:
             ):
                 # updates je dict: {node_name: {"messages": [...]}}
                 for node_name, state_update in item.items():
+                    logical_parent = _TOOL_NODE_PARENT.get(node_name, node_name)
+
+                    if node_name not in _INTERNAL_NODES:
+                        yield {
+                            "is_task_complete": False,
+                            "require_user_input": False,
+                            "content": f"Running {node_name}",
+                            "call_type": "agent",
+                            "node_id": node_name,
+                            "node_name": node_name,
+                            "node_status": "running",
+                            "parent_id": _AGENT,
+                        }
+
                     messages = state_update.get("messages", [])
+
+                    if node_name in ("researcher_node", "researcher_tools", "researcher_done"):
+                        messages = state_update.get("researcher_messages", [])
 
                     for msg in messages:
                         if isinstance(msg, AIMessage):
                             if msg.tool_calls:
-                                yield {
-                                    'is_task_complete': False,
-                                    'require_user_input': False,
-                                    'content': "LLM made tool calls.",
-                                    "call_type": "tool",
-                                    "node_id": node_name,
-                                    "node_name": node_name,
-                                    "node_status":"running",
-                                    "parent_id": _AGENT,
-                                }
-
                                 for tc in msg.tool_calls:
                                     print(f"  TOOL CALL [{node_name}]: {tc['name']}")
                                     print(f"  {tc['args']}")
@@ -453,7 +464,7 @@ class ScholarAgent:
                                         "node_id": tool_id,
                                         "node_name": tool_name,
                                         "node_status": "running",
-                                        "parent_id": node_name,
+                                        "parent_id": logical_parent,
                                     }
 
                             elif msg.content:
@@ -485,7 +496,19 @@ class ScholarAgent:
                                 "node_id": tool_id,
                                 "node_name": tool_name,
                                 "node_status": "done",
-                                "parent_id": node_name,
+                                "parent_id": logical_parent,
+                            }
+                    if not messages:
+                        if node_name not in _INTERNAL_NODES:
+                            yield {
+                                "is_task_complete": False,
+                                "require_user_input": False,
+                                "content": f"Node {node_name} processed state updates.",
+                                "call_type": "agent",
+                                "node_id": node_name,
+                                "node_name": node_name,
+                                "node_status": "done",
+                                "parent_id": _AGENT,
                             }
 
             completed_normally = True
