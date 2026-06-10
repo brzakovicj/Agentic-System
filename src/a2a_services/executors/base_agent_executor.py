@@ -117,6 +117,10 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
                 require_user_input = item['require_user_input']
                 content = item["content"]
                 call_type = item["call_type"]
+                node_id = item["node_id"]
+                node_name = item["node_name"]
+                node_status = item["node_status"]
+                parent_id = item["parent_id"]
 
                 agent_message = Message(
                     message_id=str(uuid4()),
@@ -124,7 +128,13 @@ class BaseAgentExecutor(AgentExecutor, Generic[T], ABC):
                     parts=[Part(text=content)],
                     context_id=task.context_id,
                     task_id=task.id,
-                    metadata={"call_type": call_type} if call_type else {},
+                    metadata={
+                        "call_type": call_type,
+                        "node_id": node_id,
+                        "node_name": node_name,
+                        "node_status": node_status,
+                        "parent_id": parent_id,
+                    },
                 )
 
                 if not is_task_complete and not require_user_input:

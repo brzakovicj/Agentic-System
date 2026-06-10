@@ -20,6 +20,10 @@ class StudyPlanState(TypedDict):
 
     agenda_message_id: NotRequired[str | None]
 
+    agenda_status: NotRequired[str | None]
+
+    agenda_prompt_text: NotRequired[str | None]
+
     syllabus_loaded: NotRequired[bool]
 
     syllabus_url: NotRequired[str | None]

@@ -181,7 +181,7 @@ class HostAgentService:
                     "type": "final",
                     "content": CAPABILITIES_MESSAGE,
                     "context_id": context_id,
-                    "call_type": None,
+                    "metadata": None,
                 }
                 return
 
@@ -190,19 +190,24 @@ class HostAgentService:
                     "type": "final",
                     "content": SOMETHING_WENT_WRONG_MESSAGE,
                     "context_id": context_id,
-                    "call_type": None,
+                    "metadata": None,
                 }
                 return
 
             message_id = str(uuid4())
             agent_name = self._agent_name_from_url(selected_agent)
-
-            # Emit an "agent call" notification — visible only in agent-calls mode
+ 
             yield {
                 "type": "update",
                 "content": f"Calling **{agent_name}** agent…",
                 "context_id": context_id,
-                "call_type": "agent",
+                "metadata": {
+                    "call_type": "agent",
+                    "node_id": "host_agent",
+                    "node_name": "Host agent",
+                    "node_status": "running",
+                    "parent_id": None,
+                },
             }
 
             self._active_conversations[context_id] = {
@@ -224,7 +229,6 @@ class HostAgentService:
                 metadata = message.get("metadata", {})
                 parts = message.get("parts", [])
                 text = parts[0]["text"] if parts else "Agent is working…"
-                call_type = metadata.get("call_type")
 
                 logger.info(f"Update received for context {context_id}: {text}")
 
@@ -233,7 +237,7 @@ class HostAgentService:
                         "type": "update",
                         "content": parts[0].get("text", "Agent is working..."),
                         "context_id": context_id,
-                        "call_type": call_type,
+                        "metadata": metadata,
                     }
 
             # FINAL
@@ -247,7 +251,7 @@ class HostAgentService:
                             "type": "final",
                             "content": parts[0]["text"],
                             "context_id": context_id,
-                            "call_type": None,
+                            "metadata": None,
                         }
                     
                     del self._active_conversations[context_id]
@@ -259,7 +263,7 @@ class HostAgentService:
                             "type": "final",
                             "content": parts[0]["text"],
                             "context_id": context_id,
-                            "call_type": None,
+                            "metadata": None,
                         }
                     
                     del self._active_conversations[context_id]
@@ -273,7 +277,7 @@ class HostAgentService:
                             "type": "input_required",  # <-- distinct type so the caller knows
                             "content": parts[0]["text"] if parts else "Input required.",
                             "context_id": context_id,  # caller must echo this back
-                            "call_type": None,
+                            "metadata": None,
                         }
 
         return

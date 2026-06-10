@@ -50,26 +50,6 @@ SUGGESTIONS = {
     ),
 }
 
-# View modes — order matters (used in segmented_button)
-VIEW_MODES = {
-    "Default": {
-        "icon": ":material/chat:",
-        "description": "Shows only your messages and final answers.",
-        # Which call_types to SHOW during streaming (None = always show)
-        "show_call_types": set(),   # empty = only show call_type=None events
-    },
-    "Tool calls": {
-        "icon": ":material/build:",
-        "description": "Shows tool invocations during processing.",
-        "show_call_types": {"tool"},
-    },
-    "Agent calls": {
-        "icon": ":material/smart_toy:",
-        "description": "Shows which agents are called.",
-        "show_call_types": {"agent"},
-    },
-}
-
 # Clear URL cache once per app start (not on every rerun)
 if "app_initialized" not in st.session_state:
     clear_cached_url()
@@ -90,8 +70,9 @@ if "pending_message" not in st.session_state:
 if "auto_user_message" not in st.session_state:
     st.session_state.auto_user_message = None
 
-if "view_mode" not in st.session_state:
-    st.session_state.view_mode = "Default"
+if "execution_graph" not in st.session_state:
+    # Lista čvorova: {"id": str, "name": str, "status": "running"|"done"|"error", "parent": str|None}
+    st.session_state.execution_graph = []
 
 # -----------------------------------------------------------------------------
 # UI components
@@ -124,29 +105,45 @@ def docs_info_dialog():
     )
 
 # -----------------------------------------------------------------------------
-# View mode helpers
- 
- 
-def _should_show_update(call_type: str | None, view_mode: str) -> bool:
-    """
-    Return True if an update event with the given call_type should be
-    displayed to the user, given the active view_mode.
- 
-    Logic:
-      - call_type is None  → always show (generic progress message)
-      - call_type "tool"   → show only in "Tool calls" mode
-      - call_type "agent"  → show only in "Agent calls" mode
-    """
-    if call_type is None:
-        return True
-    return call_type in VIEW_MODES[view_mode]["show_call_types"]
+# Execution graph helpers
 
-def _update_icon(call_type: str | None) -> str:
-    if call_type == "tool":
-        return "🔧"
-    if call_type == "agent":
-        return "🤖"
-    return "⏳"
+
+def _graph_upsert(node_id: str, name: str, status: str, parent: str | None = None):
+    """Dodaj novi čvor ili ažuriraj status postojećeg."""
+    graph = st.session_state.execution_graph
+    for node in graph:
+        if node["id"] == node_id:
+            node["status"] = status
+            node["name"] = name  # naziv može da se promeni (npr. "done" poruka)
+            return
+    graph.append({"id": node_id, "name": name, "status": status, "parent": parent})
+
+
+def _graph_depth(node_id: str) -> int:
+    """Izračunaj dubinu čvora u stablu (rekurzivno)."""
+    graph = st.session_state.execution_graph
+    parent_id = next((n["parent"] for n in graph if n["id"] == node_id), None)
+    if parent_id is None:
+        return 0
+    return 1 + _graph_depth(parent_id)
+
+
+def _graph_render(placeholder):
+    """Iscrtaj stablo izvršavanja unutar prosleđenog st.empty() placeholder-a."""
+    graph = st.session_state.execution_graph
+    if not graph:
+        return
+
+    STATUS_ICON = {"running": "⏳", "done": "✅", "error": "❌"}
+
+    lines = []
+    for node in graph:
+        indent = "\u00a0\u00a0\u00a0\u00a0" * _graph_depth(node["id"])
+        icon = STATUS_ICON.get(node["status"], "⏳")
+        lines.append(f"{indent}{icon} {node['name']}")
+
+    placeholder.markdown("\n\n".join(lines), unsafe_allow_html=True)
+
 
 # -----------------------------------------------------------------------------
 # Sidebar
@@ -203,7 +200,7 @@ with st.sidebar:
 
     with col2:
         st.button(
-            "ℹ️", 
+            "ℹ️",
             on_click=docs_info_dialog,
             disabled=st.session_state.is_busy
         )
@@ -253,7 +250,7 @@ with st.sidebar:
         st.caption(f"🔗 {cached_url}")
     else:
         st.caption("No schedule URL saved yet.")
-        
+
     st.divider()
 
     st.subheader("📥 Study notes")
@@ -316,35 +313,6 @@ title_row = st.container(horizontal=True, vertical_alignment="bottom")
 with title_row:
     st.title("Study Buddy", anchor=False, width="stretch")
 
-
-# -----------------------------------------------------------------------------
-# View mode selector
-# Placed right below the title, above the chat.
-# Disabled while a request is in flight so the user cannot switch mid-stream.
- 
-with st.container():
-    mode_col, desc_col = st.columns([3, 5], vertical_alignment="center")
- 
-    with mode_col:
-        selected_mode = st.segmented_control(
-            label="View mode",
-            label_visibility="collapsed",
-            options=list(VIEW_MODES.keys()),
-            default=st.session_state.view_mode,
-            key="view_mode_control",
-            disabled=st.session_state.is_busy,
-        )
- 
-        if selected_mode and selected_mode != st.session_state.view_mode:
-            st.session_state.view_mode = selected_mode
-            st.rerun()
- 
-    with desc_col:
-        mode_info = VIEW_MODES[st.session_state.view_mode]
-        icon = mode_info["icon"]
-        desc = mode_info["description"]
-        st.caption(f"{icon} {desc}")
- 
 st.divider()
 
 # -----------------------------------------------------------------------------
@@ -449,6 +417,7 @@ with title_row:
         st.session_state.pending_message = None
         st.session_state.is_busy = False
         st.session_state.context_id = None
+        st.session_state.execution_graph = []
 
     st.button(
         "Restart",
@@ -478,9 +447,17 @@ if user_message:
     with st.chat_message("assistant"):
         placeholder = st.empty()
 
+        # Execution tree state — lazily initialized on first update event
+        tree_expander = None
+        tree_placeholder = None
+
+        # Reset graph za novu poruku
+        is_resume = st.session_state.context_id is not None
+        if not is_resume:
+            st.session_state.execution_graph = []
+
         final_response = ""
         error_occurred = False
-        current_view_mode = st.session_state.view_mode
 
         try:
             with st.spinner("Working on it..."):
@@ -505,22 +482,45 @@ if user_message:
                     call_type = data.get("call_type", None)
 
                     if event.event == "update":
-                        if _should_show_update(call_type, current_view_mode):
-                            icon = _update_icon(call_type)
-                            placeholder.info(f"{icon} {content}")
+                        # Izvuci graph metadata iz event-a ako postoji,
+                        # ili napravi senzibilne default-ove iz postojećih polja
+                        node_id = (
+                            data.get("node_id")
+                            or f"node_{len(st.session_state.execution_graph)}"
+                        )
+                        node_name = data.get("node_name") or content
+                        node_status = data.get("node_status") or (
+                            "running" if call_type in ("tool", "agent") else "done"
+                        )
+                        parent_id = data.get("parent_id", None)
+
+                        _graph_upsert(node_id, node_name, node_status, parent_id)
+
+                        # Otvori expander tek kad ima šta da se prikaže
+                        if tree_expander is None:
+                            tree_expander = st.expander("⚙️ Execution", expanded=True)
+                            tree_placeholder = tree_expander.empty()
+
+                        _graph_render(tree_placeholder)
 
                     elif event.event == "final":
                         placeholder.empty()
+                        if tree_expander is not None:
+                            tree_expander.empty()
                         final_response = content
-                        st.session_state.context_id = data.get("context_id")  # ← keep it, don't reset to None
+                        st.session_state.context_id = data.get("context_id")
 
                     elif event.event == "input_required":
                         placeholder.empty()
+                        if tree_expander is not None:
+                            tree_expander.empty()
                         final_response = content
-                        st.session_state.context_id = data.get("context_id") # Save context_id so the next message resumes the same thread
- 
+                        st.session_state.context_id = data.get("context_id")
+
                     elif event.event == "error":
                         placeholder.empty()
+                        if tree_expander is not None:
+                            tree_expander.empty()
                         st.error(content)
                         st.session_state.context_id = None
                         error_occurred = True

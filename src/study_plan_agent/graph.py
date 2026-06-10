@@ -17,11 +17,14 @@ from src.utils.prompt_manager import PromptManager
 from src.study_plan_agent.tools import CourseMatchSchema, handoff_to_agent
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+_AGENT_PARENT = "host_agent"
+_AGENT = "study_plan_agent"
 
 class StudyPlanAgent:
     def __init__(self):
@@ -130,6 +133,7 @@ class StudyPlanAgent:
 
         builder.add_node("study_plan_node", self.study_plan_node)
         builder.add_node("study_plan_tools", ToolNode(self._tools))
+        builder.add_node("human_input_node", self.human_input_node)
         builder.add_node("agenda_agent", self.agenda_agent)
 
         # Edges
@@ -167,7 +171,16 @@ class StudyPlanAgent:
             },
         )
 
-        builder.add_edge("agenda_agent", "study_plan_node")
+        builder.add_conditional_edges(
+            "agenda_agent",
+            self._route_after_agenda,
+            {
+                "wait_for_user": "human_input_node",
+                "continue_to_plan": "study_plan_node"
+            }
+        )
+
+        builder.add_edge("human_input_node", "agenda_agent")
 
         self._graph = builder.compile(checkpointer=MemorySaver())
         return self._graph
@@ -194,6 +207,11 @@ class StudyPlanAgent:
             return "tools"
         
         return "done"
+    
+    def _route_after_agenda(self, state: StudyPlanState) -> str:
+        if state.get("agenda_status") == "INPUT_REQUIRED":
+            return "wait_for_user"
+        return "continue_to_plan"
 
     ##############################################################################################
     # NODES
@@ -314,27 +332,44 @@ class StudyPlanAgent:
             "syllabus_loaded": True,
         }
 
-    async def agenda_agent(self, state: StudyPlanState):
+    async def agenda_agent(self, state: StudyPlanState, writer: StreamWriter):
+        message_text = (state["user_input"] if state.get("agenda_status") == "RESUMING" else state["task_description"])
+        
         context_id = state.get("agenda_context_id") or str(uuid4())
         message_id = state.get("agenda_message_id") or str(uuid4())
         selected_agent_url = os.getenv("AGENDA_URL")
-
-        got_response = False
-
+    
         async for result in self.a2a_client.a2a_send_message_stream(
-            message_text=state["task_description"] if state["task_description"] else "",
+            message_text=message_text,
             target_agent_url=selected_agent_url,
             message_id=message_id,
             context_id=context_id,
         ):
-            # ERROR
-            if result["status"] == "error":
-                yield {
-                    "messages": [AIMessage(name="agenda", content=result["error"])],
-                    "agenda_data": [],
-                }
-                return
-        
+            if result["status"] == "working":
+                update = result["response"]["data"]["status"]
+                message = update.get("message", {})
+                metadata = message.get("metadata", {})
+                parts = message.get("parts", [])
+                text = parts[0]["text"] if parts else "Agent is working…"
+                node_id = metadata.get("node_id", None)
+                node_name = metadata.get("node_name", None)
+                node_status = metadata.get("node_status", None)
+                parent_id = metadata.get("parent_id", None)
+
+                logger.info(f"Update received for context {context_id}: {text}")
+
+                if parts:
+                    writer({
+                        "is_task_complete": False,
+                        "require_user_input": False,
+                        "content": text,
+                        "call_type": "agent",
+                        "node_id": node_id,
+                        "node_name": node_name,
+                        "node_status": node_status,
+                        "parent_id": parent_id,
+                    })
+            
             # FINAL
             if result["status"] in ["done", "completed", "success"]:
                 response_data = result["response"]
@@ -349,14 +384,11 @@ class StudyPlanAgent:
                             content = content
                         )
 
-                        yield {
+                        return {
+                            "agenda_status": "DONE",
                             "messages": [ai_message],
                             "agenda_data": [ai_message],
-                            "agenda_context_id": None,
-                            "agenda_message_id": None,
                         }
-
-                        got_response = True
 
                 elif response_data["type"] == "status_update":
                     if response_data.get("state") == "TASK_STATE_INPUT_REQUIRED":
@@ -364,50 +396,26 @@ class StudyPlanAgent:
                         parts = message.get("parts", [])
                         prompt_text = parts[0]["text"] if parts else "Input required."
 
-                        # Sačuvaj context u stanje PRE interrupt-a
-                        yield {
+                        return {
+                            "agenda_status": "INPUT_REQUIRED",
+                            "agenda_prompt_text": prompt_text,
                             "agenda_context_id": context_id,
                             "agenda_message_id": message_id,
                         }
 
-                        # Pauziraj graf i pitaj korisnika
-                        user_answer = interrupt({
-                            "message": prompt_text,
-                            "type": "text_input",
-                        })
-
-                        # Nastavi sa korisnikovim odgovorom
-                        async for inner_result in self.a2a_client.a2a_send_message_stream(
-                            message_text=user_answer,
-                            target_agent_url=selected_agent_url,
-                            message_id=str(uuid4()),
-                            context_id=context_id,   # isti context_id!
-                        ):
-                            if inner_result["status"] in ["done", "completed", "success"]:
-                                inner_data = inner_result["response"]
-                                if inner_data["type"] in ["artifact", "message"]:
-                                    parts = inner_data["data"].get("parts", [])
-                                    if parts:
-                                        content = parts[0].get("text", "")
-                                        ai_message = AIMessage(name="agenda", content=content)
-                                        yield {
-                                            "messages": [ai_message],
-                                            "agenda_data": [ai_message],
-                                            "agenda_context_id": None,
-                                            "agenda_message_id": None,
-                                        }
-                                        got_response = True
-
-        if not got_response:
-            ai_message = AIMessage(
-                name="agenda", 
-                content="No response received."
-            )
-
-            yield {
-                "messages": [ai_message], 
-                "agenda_data": []
-            }
+    async def human_input_node(self, state: StudyPlanState):
+        user_answer = interrupt({
+            "message": state.get("agenda_prompt_text"),
+            "context_id": state.get("agenda_context_id")
+        })
+        
+        # Kada stigne Command(resume=...), ova vrednost se upisuje u poruke grafa
+        # i graf se vraća nazad u 'agenda_agent' da ponovo proba!
+        return {
+            "user_input": user_answer,
+            "messages": [HumanMessage(content=user_answer)],
+            "agenda_status": "RESUMING"
+        }
 
     async def study_plan_node(self, state: StudyPlanState):
         llm = self._llm_factory.get_tool_llm(
@@ -500,51 +508,110 @@ class StudyPlanAgent:
         logger.debug("astream called: is_resuming=%s, query=%r", is_resuming, query)
 
         try:
-            async for item in self._graph.astream(
+            yield {
+                "is_task_complete": False,
+                "require_user_input": False,
+                "content": "Processing your request...",
+                "call_type": "agent",
+                "node_id": _AGENT,
+                "node_name": "Study Plan agent",
+                "node_status": "running",
+                "parent_id": _AGENT_PARENT,
+            }
+
+            async for mode, item in self._graph.astream(
                 input = state,
-                stream_mode="updates",
+                stream_mode=["updates", "custom"],
                 config = config
             ):
-                if "__interrupt__" in item:
-                    interrupted = True
+                if mode == "custom":
+                    yield item
 
-                    for interrupt_obj in item["__interrupt__"]:
-                        iv = interrupt_obj.value
+                elif mode == "updates":
+                    if "__interrupt__" in item:
+                        interrupted = True
 
-                        yield {
-                            "is_task_complete": False,
-                            "require_user_input": True,
-                            "content": iv["message"] if iv["message"] else "Input required.",
-                            "call_type": None,
-                        }
-                else:
-                    # updates je dict: {node_name: {"messages": [...]}}
-                    for node_name, state_update in item.items():
-                        messages = state_update.get("messages", [])
+                        for interrupt_obj in item["__interrupt__"]:
+                            iv = interrupt_obj.value
 
-                        for msg in messages:
-                            if isinstance(msg, AIMessage):
-                                if msg.tool_calls:
-                                    call_type = "tool" 
-                                    for tc in msg.tool_calls:
-                                        if tc['name'] == "handoff_to_agent":
-                                            call_type = "agent"       
+                            yield {
+                                "is_task_complete": False,
+                                "require_user_input": True,
+                                "content": iv["message"] if iv["message"] else "Input required.",
+                                "call_type": None,
+                                "node_id": None,
+                                "node_name": None,
+                                "node_status": None,
+                                "parent_id": _AGENT_PARENT,
+                            }
+                    else:
+                        # updates je dict: {node_name: {"messages": [...]}}
+                        for node_name, state_update in item.items():
+                            messages = state_update.get("messages", [])
 
-                                    description = await llm_describe_tool_call(tc)
+                            for msg in messages:
+                                if isinstance(msg, AIMessage):
+                                    if msg.tool_calls:
+                                        yield {
+                                            'is_task_complete': False,
+                                            'require_user_input': False,
+                                            'content': "LLM made tool calls.",
+                                            "call_type": "tool",
+                                            "node_id": node_name,
+                                            "node_name": node_name,
+                                            "node_status":"running",
+                                            "parent_id": _AGENT,
+                                        }
+
+                                        for tc in msg.tool_calls:
+                                        #     print(f"  TOOL CALL [{node_name}]: {tc['name']}")
+                                        #     print(f"  {tc['args']}")
+                                        # print()
+
+                                            tool_id = f"tool_{tc['name']}"
+                                            tool_name = tc['name']
+
+                                            yield {
+                                                'is_task_complete': False,
+                                                'require_user_input': False,
+                                                'content': "LLM called tool",
+                                                "call_type": "tool",
+                                                "node_id": tool_id,
+                                                "node_name": tool_name,
+                                                "node_status": "running",
+                                                "parent_id": node_name,
+                                            }
+
+                                    elif msg.content:
+                                        last_ai_content = msg.content.strip()
+                                        yield {
+                                            'is_task_complete': False,
+                                            'require_user_input': False,
+                                            'content': last_ai_content,
+                                            "call_type": None,
+                                            "node_id": node_name,
+                                            "node_name": node_name,
+                                            "node_status": "done",
+                                            "parent_id": _AGENT,
+                                        }
+                                elif isinstance(msg, ToolMessage):
+                                    print(
+                                        f"[Tool result: {msg.name}]"
+                                    )
+                                    print()
+
+                                    tool_id = f"tool_{msg.name}"
+                                    tool_name = msg.name
+                                    
                                     yield {
                                         'is_task_complete': False,
                                         'require_user_input': False,
-                                        'content': description,
-                                        "call_type": call_type,
-                                    }
-
-                                elif msg.content:
-                                    last_ai_content = msg.content.strip()
-                                    yield {
-                                        'is_task_complete': False,
-                                        'require_user_input': False,
-                                        'content': last_ai_content,
-                                        "call_type": None,
+                                        'content': "LLM called tool",
+                                        "call_type": "tool",
+                                        "node_id": tool_id,
+                                        "node_name": tool_name,
+                                        "node_status": "done",
+                                        "parent_id": node_name,
                                     }
 
             completed_normally = True
@@ -557,6 +624,10 @@ class StudyPlanAgent:
                 "require_user_input": False,
                 "content": f"Error: {str(exc)}",
                 "call_type": None,
+                "node_id": None,
+                "node_name": None,
+                "node_status": "error",
+                "parent_id": None,
             }
 
         finally:
@@ -565,5 +636,9 @@ class StudyPlanAgent:
                     "is_task_complete": True,
                     "require_user_input": False,
                     "content": last_ai_content,
-                    "call_type": None,
+                    "call_type": "agent",
+                    "node_id": _AGENT,
+                    "node_name": "Study Plan agent",
+                    "node_status": "done",
+                    "parent_id": _AGENT_PARENT,
                 }

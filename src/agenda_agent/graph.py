@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, AsyncIterable
 
 from dotenv import load_dotenv
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Agent
 # ---------------------------------------------------------------------------
+
+_AGENT_PARENT = "host_agent"
+_AGENT = "agenda_agent"
 
 class AgendaAgent:
     def __init__(self) -> None:
@@ -235,11 +238,22 @@ class AgendaAgent:
         logger.debug("astream called: is_resuming=%s, query=%r", is_resuming, query)
 
         try:
+            yield {
+                "is_task_complete": False,
+                "require_user_input": False,
+                "content": "Processing your request...",
+                "call_type": "agent",
+                "node_id": _AGENT,
+                "node_name": "Agenda agent",
+                "node_status": "running",
+                "parent_id": _AGENT_PARENT,
+            }
+            
             async for item in self._graph.astream(
                 input = state,
                 stream_mode="updates",
                 config = config
-            ):
+            ):  
                 if "__interrupt__" in item:
                     interrupted = True
 
@@ -251,6 +265,10 @@ class AgendaAgent:
                             "require_user_input": True,
                             "content": iv["message"] if iv["message"] else "Input required.",
                             "call_type": None,
+                            "node_id": None,
+                            "node_name": None,
+                            "node_status": None,
+                            "parent_id": _AGENT_PARENT,
                         }
                 else:
                     # updates je dict: {node_name: {"messages": [...]}}
@@ -260,18 +278,35 @@ class AgendaAgent:
                         for msg in messages:
                             if isinstance(msg, AIMessage):
                                 if msg.tool_calls:
-                                    for tc in msg.tool_calls:
-                                        print(f"  TOOL CALL [{node_name}]: {tc['name']}")
-                                        print(f"  {tc['args']}")
-                                    print()
-
-                                    description = await llm_describe_tool_call(tc)
                                     yield {
                                         'is_task_complete': False,
                                         'require_user_input': False,
-                                        'content': description,
+                                        'content': "LLM made tool calls.",
                                         "call_type": "tool",
+                                        "node_id": node_name,
+                                        "node_name": node_name,
+                                        "node_status":"running",
+                                        "parent_id": _AGENT,
                                     }
+
+                                    for tc in msg.tool_calls:
+                                    #     print(f"  TOOL CALL [{node_name}]: {tc['name']}")
+                                    #     print(f"  {tc['args']}")
+                                    # print()
+
+                                        tool_id = f"tool_{tc['name']}"
+                                        tool_name = tc['name']
+
+                                        yield {
+                                            'is_task_complete': False,
+                                            'require_user_input': False,
+                                            'content': "LLM called tool",
+                                            "call_type": "tool",
+                                            "node_id": tool_id,
+                                            "node_name": tool_name,
+                                            "node_status": "running",
+                                            "parent_id": node_name,
+                                        }
 
                                 elif msg.content:
                                     last_ai_content = msg.content.strip()
@@ -280,7 +315,30 @@ class AgendaAgent:
                                         'require_user_input': False,
                                         'content': last_ai_content,
                                         "call_type": None,
+                                        "node_id": node_name,
+                                        "node_name": node_name,
+                                        "node_status": "done",
+                                        "parent_id": _AGENT,
                                     }
+                            elif isinstance(msg, ToolMessage):
+                                print(
+                                    f"[Tool result: {msg.name}]"
+                                )
+                                print()
+
+                                tool_id = f"tool_{msg.name}"
+                                tool_name = msg.name
+                                
+                                yield {
+                                    'is_task_complete': False,
+                                    'require_user_input': False,
+                                    'content': "LLM called tool",
+                                    "call_type": "tool",
+                                    "node_id": tool_id,
+                                    "node_name": tool_name,
+                                    "node_status": "done",
+                                    "parent_id": node_name,
+                                }
 
             completed_normally = True
 
@@ -292,6 +350,10 @@ class AgendaAgent:
                 "require_user_input": False,
                 "content": f"Error: {str(exc)}",
                 "call_type": None,
+                "node_id": None,
+                "node_name": None,
+                "node_status": "error",
+                "parent_id": None,
             }
 
         finally:
@@ -300,5 +362,9 @@ class AgendaAgent:
                     "is_task_complete": True,
                     "require_user_input": False,
                     "content": last_ai_content,
-                    "call_type": None,
+                    "call_type": "agent",
+                    "node_id": _AGENT,
+                    "node_name": "Agenda agent",
+                    "node_status": "done",
+                    "parent_id": _AGENT_PARENT,
                 }

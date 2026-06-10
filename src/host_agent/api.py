@@ -57,13 +57,19 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                 if await http_request.is_disconnected():
                     logger.info("Client disconnected, stopping stream.")
                     break
+
+                metadata = event.get("metadata", {}) or {}
  
                 yield {
                     "event": event["type"],
                     "data": json.dumps({
                         "content": event["content"],
                         "context_id": event.get("context_id"),  # pass back to client
-                        "call_type":  event.get("call_type"),
+                        "call_type":  metadata.get("call_type", None),
+                        "node_id": metadata.get("node_id", None),
+                        "node_name": metadata.get("node_name", None),
+                        "node_status": metadata.get("node_status", None),
+                        "parent_id": metadata.get("parent_id", None),
                     }),
                 }
  

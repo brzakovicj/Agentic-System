@@ -11,9 +11,12 @@ from src.utils.tool_formatter import llm_describe_tool_call
 from src.utils.prompt_manager import PromptManager
 from src.utils.llm_factory import LLMFactory, ModelTier
 from src.utils.mcp_client import MCPClient
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 load_dotenv()
+
+_AGENT_PARENT = "host_agent"
+_AGENT = "documents_agent"
 
 class DocumentsAgent:
     def __init__(self):
@@ -131,6 +134,17 @@ class DocumentsAgent:
         completed_normally = False
 
         try:
+            yield {
+                "is_task_complete": False,
+                "require_user_input": False,
+                "content": "Processing your request...",
+                "call_type": "agent",
+                "node_id": _AGENT,
+                "node_name": "Documents agent",
+                "node_status": "running",
+                "parent_id": _AGENT_PARENT,
+            }
+            
             async for item in self._graph.astream(
                 input = state,
                 stream_mode="updates",
@@ -143,18 +157,34 @@ class DocumentsAgent:
                     for msg in messages:
                         if isinstance(msg, AIMessage):
                             if msg.tool_calls:
-                                for tc in msg.tool_calls:
-                                    print(f"  TOOL CALL [{node_name}]: {tc['name']}")
-                                    print(f"  {tc['args']}")
-                                print()
-
-                                description = await llm_describe_tool_call(tc)
                                 yield {
                                     'is_task_complete': False,
                                     'require_user_input': False,
-                                    'content': description,
+                                    'content': "LLM made tool calls.",
                                     "call_type": "tool",
+                                    "node_id": node_name,
+                                    "node_name": node_name,
+                                    "node_status":"running",
+                                    "parent_id": _AGENT,
                                 }
+                                
+                                for tc in msg.tool_calls:
+                                    print(f"  TOOL CALL [{node_name}]: {tc['name']}")
+                                    print(f"  {tc['args']}")
+
+                                    tool_id = f"tool_{tc['name']}"
+                                    tool_name = tc['name']
+
+                                    yield {
+                                        'is_task_complete': False,
+                                        'require_user_input': False,
+                                        'content': "LLM called tool",
+                                        "call_type": "tool",
+                                        "node_id": tool_id,
+                                        "node_name": tool_name,
+                                        "node_status": "running",
+                                        "parent_id": node_name,
+                                    }
 
                             elif msg.content:
                                 last_ai_content = msg.content.strip()
@@ -163,7 +193,30 @@ class DocumentsAgent:
                                     'require_user_input': False,
                                     'content': last_ai_content,
                                     "call_type": None,
+                                    "node_id": node_name,
+                                    "node_name": node_name,
+                                    "node_status": "done",
+                                    "parent_id": _AGENT,
                                 }
+                        elif isinstance(msg, ToolMessage):
+                            print(
+                                f"[Tool result: {msg.name}]"
+                            )
+                            print()
+
+                            tool_id = f"tool_{msg.name}"
+                            tool_name = msg.name
+                            
+                            yield {
+                                'is_task_complete': False,
+                                'require_user_input': False,
+                                'content': "LLM called tool",
+                                "call_type": "tool",
+                                "node_id": tool_id,
+                                "node_name": tool_name,
+                                "node_status": "done",
+                                "parent_id": node_name,
+                            }
 
             completed_normally = True
 
@@ -175,6 +228,10 @@ class DocumentsAgent:
                 "require_user_input": False,
                 "content": f"Error: {str(exc)}",
                 "call_type": None,
+                "node_id": None,
+                "node_name": None,
+                "node_status": "error",
+                "parent_id": None,
             }
 
         finally:
@@ -183,7 +240,11 @@ class DocumentsAgent:
                     "is_task_complete": True,
                     "require_user_input": False,
                     "content": last_ai_content,
-                    "call_type": None,
+                    "call_type": "agent",
+                    "node_id": _AGENT,
+                    "node_name": "Documents agent",
+                    "node_status": "done",
+                    "parent_id": _AGENT_PARENT,
                 }
 
     async def close(self):
